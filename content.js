@@ -2,7 +2,7 @@
     "use strict";
     
     console.log("Colonist Card Counter extension loaded");
-    console.log("Version 1.4.11 - Enhanced game log container detection with robust fallback methods");
+    console.log("Version 1.4.10 - Enhanced development card purchase detection and resource deduction");
     
     // Advanced game state tracking system
     window.gameState = {
@@ -119,8 +119,8 @@
                 playerName = this.getExtensionUser();
             }
             
+            console.log(`Adding player: ${playerName} with color: ${playerColor}`);
             if (!this.players[playerName]) {
-                console.log(`Adding new player: ${playerName} with color: ${playerColor}`);
                 this.players[playerName] = {
                     name: playerName,
                     color: playerColor,
@@ -143,12 +143,6 @@
                 const resourceTable = document.getElementById('resource-table');
                 if (resourceTable && resourceTable.querySelector('tbody')) {
                     this.addPlayerToResourceTable(resourceTable.querySelector('tbody'), playerName);
-                }
-            } else {
-                // Player exists - preserve original color if new color is default
-                if (playerColor !== '#ffffff' && this.players[playerName].color !== playerColor) {
-                    console.log(`Updating ${playerName} color from ${this.players[playerName].color} to ${playerColor}`);
-                    this.players[playerName].color = playerColor;
                 }
             }
             return this.players[playerName];
@@ -484,15 +478,8 @@
                         spentState[action.player] = { lumber: 0, brick: 0, wool: 0, grain: 0, ore: 0 };
                     }
                     
-                    console.log(`[1V1-DEBUG] ${action.player} trying to spend:`, action.cost);
-                    console.log(`[1V1-DEBUG] ${action.player} current resources in state:`, spentState[action.player]);
-                    console.log(`[1V1-DEBUG] All players in current state:`, Object.keys(spentState));
-                    
                     // Only keep states where player has enough resources
-                    const canAffordSpending = this.playerCanAfford(spentState[action.player], action.cost);
-                    console.log(`[1V1-DEBUG] Can ${action.player} afford ${JSON.stringify(action.cost)}? ${canAffordSpending}`);
-                    
-                    if (canAffordSpending) {
+                    if (this.playerCanAfford(spentState[action.player], action.cost)) {
                         for (const [resource, amount] of Object.entries(action.cost)) {
                             spentState[action.player][resource] -= amount;
                             // Ensure we don't go negative
@@ -501,9 +488,9 @@
                             }
                         }
                         newStates.push(spentState);
-                        console.log(`[1V1-DEBUG] State after ${action.player} spent resources:`, spentState[action.player]);
+                        console.log(`State after ${action.player} spent resources:`, spentState[action.player]);
                     } else {
-                        console.log(`[1V1-ERROR] ${action.player} cannot afford ${JSON.stringify(action.cost)} in state:`, spentState[action.player]);
+                        console.log(`${action.player} cannot afford ${JSON.stringify(action.cost)} in state:`, spentState[action.player]);
                         // If player can't afford it, this state is eliminated
                     }
                     break;
@@ -624,17 +611,17 @@
                     }
                     
                         // Check if player has all the resources they're giving to bank
-                        let canAffordBankTrade = true;
+                        let canAfford = true;
                         for (const [resource, amount] of Object.entries(action.gave)) {
                         if (bankNewState[action.player][resource] < amount) {
-                                canAffordBankTrade = false;
+                                canAfford = false;
                                 break;
                             }
                         }
                         
-                        console.log(`[STATE] Player can afford bank trade? ${canAffordBankTrade}`);
+                        console.log(`[STATE] Player can afford bank trade? ${canAfford}`);
                         
-                        if (canAffordBankTrade) {
+                        if (canAfford) {
                             // Remove resources given to bank
                             for (const [resource, amount] of Object.entries(action.gave)) {
                             bankNewState[action.player][resource] -= amount;
@@ -693,7 +680,7 @@
                     
                 case 'robbed_specific':
                     // Handle specific resource robbery (rare but possible)
-                    console.log(`[1V1-DEBUG] Processing specific resource steal: ${action.robber} stole ${action.resource} from ${action.victim}`);
+                    console.log(`[STATE] Processing specific resource steal: ${action.robber} stole ${action.resource} from ${action.victim}`);
                     
                     // Ensure both players exist in state
                     const specificRobberyState = JSON.parse(JSON.stringify(state));
@@ -704,20 +691,15 @@
                         specificRobberyState[action.robber] = { lumber: 0, brick: 0, wool: 0, grain: 0, ore: 0 };
                     }
                     
-                    console.log(`[1V1-DEBUG] Before steal - ${action.victim} resources:`, specificRobberyState[action.victim]);
-                    console.log(`[1V1-DEBUG] Before steal - ${action.robber} resources:`, specificRobberyState[action.robber]);
-                    console.log(`[1V1-DEBUG] Checking if ${action.victim} has ${action.resource}: ${specificRobberyState[action.victim][action.resource]}`);
-                    
                     if (specificRobberyState[action.victim][action.resource] > 0) {
                         specificRobberyState[action.victim][action.resource] -= 1;
                         specificRobberyState[action.robber][action.resource] += 1;
-                        console.log(`[1V1-DEBUG] SPECIFIC ROBBERY PROCESSED SUCCESSFULLY`);
-                        console.log(`[1V1-DEBUG] After robbery - ${action.victim}:`, specificRobberyState[action.victim]);
-                        console.log(`[1V1-DEBUG] After robbery - ${action.robber}:`, specificRobberyState[action.robber]);
+                            console.log(`[STATE] SPECIFIC ROBBERY PROCESSED`);
+                        console.log(`[STATE] After robbery - ${action.victim}:`, specificRobberyState[action.victim]);
+                        console.log(`[STATE] After robbery - ${action.robber}:`, specificRobberyState[action.robber]);
                         newStates.push(specificRobberyState);
                         } else {
-                            console.log(`[1V1-ERROR] SPECIFIC ROBBERY ELIMINATED STATE - ${action.victim} doesn't have ${action.resource}`);
-                            console.log(`[1V1-ERROR] Available resources for ${action.victim}:`, specificRobberyState[action.victim]);
+                            console.log(`[STATE] SPECIFIC ROBBERY ELIMINATED STATE - victim doesn't have ${action.resource}`);
                             // This state is eliminated because victim doesn't have the specific resource
                         }
                     break;
@@ -1267,17 +1249,7 @@
         try {
             console.log("Searching for game feeds container...");
             
-            // Debug: Check what's available in the DOM
-            const allContainers = document.querySelectorAll('[class*="Container"], [class*="container"]');
-            console.log(`Found ${allContainers.length} containers in DOM`);
-            
-            const allScrollers = document.querySelectorAll('[class*="Scroller"], [class*="scroller"]');
-            console.log(`Found ${allScrollers.length} scrollers in DOM`);
-            
-            const feedMessages = document.querySelectorAll('.feedMessage-O8TLknGe');
-            console.log(`Found ${feedMessages.length} feed messages in DOM`);
-            
-            // Method 1: Look for the specific game feeds container structure
+            // Look for the specific game feeds container structure
             const gameFeedsContainer = document.querySelector('.gameFeedsContainer-jBSxvDCV');
             if (gameFeedsContainer) {
                 console.log("Found gameFeedsContainer-jBSxvDCV");
@@ -1288,50 +1260,27 @@
                 }
             }
             
-            // Method 2: Look for any gameFeedsContainer
-            const anyGameFeeds = document.querySelector('[class*="gameFeedsContainer"]');
-            if (anyGameFeeds) {
-                console.log("Found alternative gameFeedsContainer:", anyGameFeeds.className);
-                const anyScroller = anyGameFeeds.querySelector('[class*="virtualScroller"], [class*="Scroller"]');
-                if (anyScroller) {
-                    console.log("Found scroller within alternative container");
-                    return anyScroller;
-                }
-            }
-            
-            // Method 3: Look for virtualScroller directly
+            // Fallback: look for virtualScroller directly
             const virtualScroller = document.querySelector('.virtualScroller-lSkdkGJi');
             if (virtualScroller) {
                 console.log("Found virtualScroller directly");
                 return virtualScroller;
             }
             
-            // Method 4: Look for any virtualScroller
-            const anyVirtualScroller = document.querySelector('[class*="virtualScroller"]');
-            if (anyVirtualScroller) {
-                console.log("Found alternative virtualScroller:", anyVirtualScroller.className);
-                return anyVirtualScroller;
-            }
-            
-            // Method 5: Trace up from feedMessage elements
+            // Look for the container that has feedMessage elements
+            const feedMessages = document.querySelectorAll('.feedMessage-O8TLknGe');
             if (feedMessages.length > 0) {
-                console.log("Attempting to trace up from feed messages...");
                 let parent = feedMessages[0].parentElement;
-                let depth = 0;
-                while (parent && depth < 10) {
-                    console.log(`Parent ${depth}:`, parent.className);
-                    if (parent.classList.contains('virtualScroller-lSkdkGJi') || 
-                        parent.className.includes('virtualScroller') ||
-                        parent.className.includes('Scroller')) {
+                while (parent && !parent.classList.contains('virtualScroller-lSkdkGJi')) {
+                    parent = parent.parentElement;
+                }
+                if (parent) {
                     console.log("Found container by tracing up from feedMessage");
                     return parent;
-                    }
-                    parent = parent.parentElement;
-                    depth++;
                 }
             }
             
-            console.log("No game log container found with any method");
+            console.log("No game log container found");
             return null;
                                 } catch (error) {
             console.error("Error finding game log container:", error);
@@ -2323,23 +2272,55 @@
                     console.log(`[BUY] Player: ${playerName}`);
                     window.gameState.setCurrentPlayer(playerName);
 
-                    const lastAction = window.gameState.confirmedActions[window.gameState.confirmedActions.length - 1];
-                    if (lastAction && lastAction.type === 'spent_resources' && lastAction.reason.includes('bought Development Card') && lastAction.player === playerName) {
-                       // It's possible the game log creates a duplicate entry for a single purchase.
-                       // If the last action was the exact same, skip this one.
-                       console.log(`[BUY] Duplicate 'bought Development Card' action detected for ${playerName}. Skipping.`);
-                       return true; // Pretend we handled it to prevent other parsers from running.
+                    // Check for duplicate detection with shorter time window
+                    const now = Date.now();
+                    const recentActions = window.gameState.confirmedActions.slice(-3);
+                    const isDuplicate = recentActions.some(action => 
+                        action.type === 'spent_resources' && 
+                        action.player === playerName &&
+                        action.reason && action.reason.includes('bought Development Card') &&
+                        (now - action.timestamp) < 1000 // 1 second window
+                    );
+                    
+                    if (isDuplicate) {
+                        console.log(`[BUY] Duplicate 'bought Development Card' action detected for ${playerName}. Skipping.`);
+                        return true;
                     }
                     
                     let cost = {};
                     let itemBought = '';
                     
-                    // Check for development card images
-                    const devCardImage = messageSpan.querySelector('img[alt*="Development Card"], img[src*="devcardback"]');
-                    if (devCardImage || text.includes('Development Card')) {
+                    // Enhanced detection for development cards
+                    const allImages = messageSpan.querySelectorAll('img');
+                    console.log(`[BUY] Found ${allImages.length} images in message`);
+                    
+                    let devCardDetected = false;
+                    allImages.forEach((img, index) => {
+                        console.log(`[BUY] Image ${index}: alt="${img.alt}", src="${img.src}"`);
+                        if (img.alt && img.alt.includes('Development Card')) {
+                            devCardDetected = true;
+                            console.log(`[BUY] Development Card detected by alt text`);
+                        }
+                        if (img.src && img.src.includes('devcardback')) {
+                            devCardDetected = true;
+                            console.log(`[BUY] Development Card detected by src (devcardback)`);
+                        }
+                        if (img.src && img.src.includes('card_devcardback')) {
+                            devCardDetected = true;
+                            console.log(`[BUY] Development Card detected by src (card_devcardback)`);
+                        }
+                    });
+                    
+                    // Also check text content as fallback
+                    if (text.includes('Development Card') || text.includes('development card')) {
+                        devCardDetected = true;
+                        console.log(`[BUY] Development Card detected by text content`);
+                    }
+                    
+                    if (devCardDetected) {
                         cost = { grain: 1, ore: 1, wool: 1 };
                         itemBought = 'Development Card';
-                        console.log(`[BUY] Detected Development Card purchase`);
+                        console.log(`[BUY] ✅ CONFIRMED Development Card purchase detected`);
                     }
                     
                     if (Object.keys(cost).length > 0) {
@@ -2348,26 +2329,31 @@
                         // Make sure player exists
                         window.gameState.addPlayer(playerName);
                         
-                        window.gameState.addAction({
+                        const action = {
                             type: 'spent_resources',
                             player: playerName,
                             cost: cost,
-                            reason: `bought ${itemBought}`
-                        });
+                            reason: `bought ${itemBought}`,
+                            timestamp: Date.now()
+                        };
                         
-                    return true;
+                        window.gameState.addAction(action);
+                        console.log(`[BUY] ✅ Successfully processed ${itemBought} purchase for ${playerName}`);
+                        
+                        return true;
                     } else {
-                        console.log(`[BUY] Could not determine what was bought or cost`);
+                        console.log(`[BUY] ❌ Could not determine what was bought or cost`);
+                        console.log(`[BUY] Full HTML content:`, messageSpan.innerHTML);
                     }
                 } else {
                     console.log(`[BUY] No player span found`);
                 }
             } else {
                 console.log(`[BUY] No 'bought' keyword found`);
-                }
-                
-                return false;
-    } catch (error) {
+            }
+            
+            return false;
+        } catch (error) {
             console.error("Error parsing buy action:", error);
             return false;
         }
@@ -2521,27 +2507,6 @@
         
         console.log("Extension initialization complete");
     }
-    
-    // Add global debug function for manual troubleshooting
-    window.debugCatanExtension = function() {
-        console.log("=== Manual CATAN Extension Debug ===");
-        const container = findGameLogContainer();
-        if (container) {
-            console.log("✅ Container found successfully!");
-            const entries = container.querySelectorAll('.feedMessage-O8TLknGe');
-            console.log(`Found ${entries.length} feed messages to process`);
-            if (setupObserver()) {
-                console.log("✅ Observer setup successful!");
-                return true;
-            } else {
-                console.log("❌ Observer setup failed");
-                return false;
-            }
-        } else {
-            console.log("❌ Container still not found");
-            return false;
-        }
-    };
     
     // Start initialization when page loads
 if (document.readyState === 'loading') {
