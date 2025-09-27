@@ -2,7 +2,7 @@
     "use strict";
     
     console.log("Colonist Card Counter extension loaded");
-        console.log("Version 1.4.1 - Added support for Monopoly card");
+        console.log("Version 1.4.2 - Smarter Monopoly detection and state pruning");
     
     // Advanced game state tracking system
     window.gameState = {
@@ -652,24 +652,34 @@
                         monopolyState[action.player] = { lumber: 0, brick: 0, wool: 0, grain: 0, ore: 0 };
                     }
 
-                    let totalStolen = 0;
+                    // PRUNING LOGIC: The sum of the resource from all other players MUST equal the stolen amount.
+                    let totalStolenFromOthers = 0;
                     for (const player in monopolyState) {
-                        if (player !== action.player && monopolyState[player][action.resource] > 0) {
-                            totalStolen += monopolyState[player][action.resource];
-                            monopolyState[player][action.resource] = 0;
-                            console.log(`[STATE] ${player} lost all ${action.resource}`);
+                        if (player !== action.player) {
+                            totalStolenFromOthers += monopolyState[player][action.resource] || 0;
                         }
                     }
 
-                    // The log gives us the exact total, so we can use that to validate and correct.
-                    monopolyState[action.player][action.resource] += action.amount;
-                    console.log(`[STATE] ${action.player} gained ${action.amount} ${action.resource}`);
-                    
-                    if(totalStolen !== action.amount) {
-                        console.warn(`[STATE] Monopoly discrepancy: state predicted ${totalStolen} stolen, log reported ${action.amount}. Using log value.`);
-                    }
+                    if (totalStolenFromOthers === action.amount) {
+                        // This state is VALID. Proceed with the transfer.
+                        console.log(`[STATE] Monopoly state valid: others had ${totalStolenFromOthers} ${action.resource}, matching log.`);
+                        
+                        // Take resources from others
+                        for (const player in monopolyState) {
+                            if (player !== action.player) {
+                                monopolyState[player][action.resource] = 0;
+                            }
+                        }
+                        
+                        // Give resources to the player. Use the amount from the log for perfect accuracy.
+                        monopolyState[action.player][action.resource] += action.amount;
+                        newStates.push(monopolyState);
 
-                    newStates.push(monopolyState);
+                    } else {
+                        // This state is IMPOSSIBLE and must be pruned.
+                        console.log(`[PRUNE] Monopoly state pruned: others had ${totalStolenFromOthers} ${action.resource}, but log reported ${action.amount} stolen.`);
+                    }
+                    
                     break;
                     
                 default:
@@ -1687,48 +1697,26 @@
     function parseMonopolyAction(entry, messageSpan) {
         try {
             const text = messageSpan.textContent;
-            
-            // Monopoly happens in two log entries: "Player used Monopoly" and then "Player stole X resource".
-            // We need to look ahead to the next log entry to confirm.
-            if (text.includes('used') && text.includes('Monopoly')) {
-                console.log(`[MONOPOLY] Found 'used Monopoly' message`);
+            // A steal of more than 1 resource at a time is always a Monopoly card.
+            const stealMatch = text.match(/(\w+)\s+stole\s+(\d+)\s+/);
+
+            if (stealMatch && parseInt(stealMatch[2], 10) > 1) {
+                const playerName = stealMatch[1];
+                const amount = parseInt(stealMatch[2], 10);
+                const resourceImages = messageSpan.querySelectorAll('img[alt]');
                 
-                const playerSpan = messageSpan.querySelector('span[style*="color"]');
-                if (playerSpan) {
-                    const playerName = playerSpan.textContent.trim();
-                    console.log(`[MONOPOLY] Player: ${playerName} used Monopoly`);
+                if (resourceImages.length > 0) {
+                    const resource = resourceImages[0].alt.toLowerCase();
+                    console.log(`[MONOPOLY] Detected: ${playerName} stole ${amount} ${resource} (Monopoly)`);
 
-                    // Look at the next log entry to see what was stolen
-                    const nextEntry = entry.nextElementSibling;
-                    if (nextEntry) {
-                        const nextMessageSpan = nextEntry.querySelector('.messagePart-XeUsOgLX');
-                        const nextText = nextMessageSpan ? nextMessageSpan.textContent : '';
-                        
-                        const stealMatch = nextText.match(/(\w+)\s+stole\s+(\d+)\s+/);
-                        if (stealMatch && stealMatch[1] === playerName) {
-                            const amount = parseInt(stealMatch[2], 10);
-                            const resourceImages = nextMessageSpan.querySelectorAll('img[alt]');
-                            if (resourceImages.length > 0) {
-                                const resource = resourceImages[0].alt.toLowerCase();
-                                console.log(`[MONOPOLY] CONFIRMED: ${playerName} stole ${amount} ${resource}`);
-
-                                // Mark the second entry as processed immediately to avoid double counting
-                                const nextDataIndex = nextEntry.getAttribute('data-index');
-                                const nextContentHash = nextText.substring(0, 50) + nextDataIndex + (nextMessageSpan.innerHTML.length || 0);
-                                window.gameState.processedEntries.add(nextContentHash);
-                                console.log(`[MONOPOLY] Marked followup steal message as processed: ${nextContentHash}`);
-                                
-                                window.gameState.addPlayer(playerName);
-                                window.gameState.addAction({
-                                    type: 'monopoly',
-                                    player: playerName,
-                                    resource: resource,
-                                    amount: amount,
-                                });
-                                return true;
-                            }
-                        }
-                    }
+                    window.gameState.addPlayer(playerName);
+                    window.gameState.addAction({
+                        type: 'monopoly',
+                        player: playerName,
+                        resource: resource,
+                        amount: amount,
+                    });
+                    return true; // Action was handled
                 }
             }
         } catch (error) {
