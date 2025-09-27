@@ -2,7 +2,7 @@
     "use strict";
     
     console.log("Colonist Card Counter extension loaded");
-        console.log("Version 1.3.6 - Improved player detection using DOM elements, cleaner current player logic");
+        console.log("Version 1.3.7 - Enhanced state pruning with aggressive algorithms, performance monitoring, emergency controls");
     
     // Advanced game state tracking system
     window.gameState = {
@@ -341,6 +341,38 @@
             } else {
                 console.log(`[PLAYER] Failed to detect current player during initialization`);
             }
+            
+            // Start periodic state health monitoring
+            this.startStateHealthMonitoring();
+        },
+        
+        // Periodic monitoring of state health
+        startStateHealthMonitoring: function() {
+            // Check state health every 30 seconds
+            setInterval(() => {
+                const stateCount = this.possibleStates.length;
+                const actionCount = this.confirmedActions.length;
+                
+                if (stateCount > 50) {
+                    console.warn(`[HEALTH] State count is ${stateCount} after ${actionCount} actions`);
+                }
+                
+                if (stateCount > 500) {
+                    console.error(`[HEALTH] Critical state explosion: ${stateCount} states! Applying emergency pruning.`);
+                    this.emergencyPruning();
+                }
+            }, 30000);
+        },
+        
+        // Emergency pruning when state count becomes critical
+        emergencyPruning: function() {
+            console.log(`[EMERGENCY] Applying emergency pruning to ${this.possibleStates.length} states`);
+            
+            if (this.possibleStates.length > 1000) {
+                // Keep only the 50 most central states
+                this.possibleStates = this.applyAggressivePruning(this.possibleStates).slice(0, 50);
+                console.log(`[EMERGENCY] Emergency pruned to ${this.possibleStates.length} states`);
+            }
         },
         
         // Advanced state management methods
@@ -356,8 +388,29 @@
                 this.gamePhase = 'main';
             }
             
+            // Performance monitoring
+            const startTime = performance.now();
+            const statesBefore = this.possibleStates.length;
+            
             this.updatePossibleStates(action);
+            const statesAfterUpdate = this.possibleStates.length;
+            
             this.eliminateImpossibleStates();
+            const statesAfterPruning = this.possibleStates.length;
+            
+            const endTime = performance.now();
+            const processingTime = endTime - startTime;
+            
+            // Log performance metrics for complex actions
+            if (processingTime > 10 || statesAfterUpdate > 100) {
+                console.log(`[PERF] Action ${action.type}: ${statesBefore} → ${statesAfterUpdate} → ${statesAfterPruning} states in ${processingTime.toFixed(2)}ms`);
+            }
+            
+            // Warn about potential performance issues
+            if (statesAfterPruning > 200) {
+                console.warn(`[PERF] High state count after action: ${statesAfterPruning} states. Consider more aggressive pruning.`);
+            }
+            
             this.updateResourceDisplay();
         },
         
@@ -648,7 +701,10 @@
         },
         
         eliminateImpossibleStates: function() {
-            // Remove duplicate states
+            const startCount = this.possibleStates.length;
+            let eliminatedCount = 0;
+            
+            // Step 1: Remove duplicate states
             const uniqueStates = [];
             const stateStrings = new Set();
             
@@ -660,13 +716,157 @@
                 }
             }
             
-            const beforeCount = this.possibleStates.length;
+            eliminatedCount += this.possibleStates.length - uniqueStates.length;
             this.possibleStates = uniqueStates;
-            const afterCount = this.possibleStates.length;
             
-            if (beforeCount !== afterCount) {
-                console.log(`Eliminated ${beforeCount - afterCount} duplicate states, ${afterCount} remain`);
+            // Step 2: Eliminate states with negative resources (should never happen, but safety check)
+            this.possibleStates = this.possibleStates.filter(state => {
+                for (const [player, resources] of Object.entries(state)) {
+                    for (const [resource, amount] of Object.entries(resources)) {
+                        if (amount < 0) {
+                            eliminatedCount++;
+                            console.log(`[PRUNE] Eliminated state with negative ${resource} for ${player}: ${amount}`);
+                            return false;
+                        }
+                    }
+                }
+                return true;
+            });
+            
+            // Step 3: Cross-reference with known impossible constraints based on observed actions
+            this.possibleStates = this.possibleStates.filter(state => {
+                return this.validateStateAgainstKnownConstraints(state);
+            });
+            
+            // Step 4: If we have too many states, apply aggressive pruning
+            if (this.possibleStates.length > 1000) {
+                console.warn(`[PRUNE] High state count (${this.possibleStates.length}), applying aggressive pruning`);
+                this.possibleStates = this.applyAggressivePruning(this.possibleStates);
             }
+            
+            const finalCount = this.possibleStates.length;
+            const totalEliminated = startCount - finalCount;
+            
+            if (totalEliminated > 0) {
+                console.log(`[PRUNE] Eliminated ${totalEliminated} impossible states (${startCount} → ${finalCount})`);
+                console.log(`[PRUNE] Pruning efficiency: ${((totalEliminated / startCount) * 100).toFixed(1)}%`);
+            }
+            
+            // Log warning if state count is still very high
+            if (finalCount > 500) {
+                console.warn(`[PRUNE] State count still high: ${finalCount}. Consider more aggressive pruning.`);
+            }
+        },
+        
+        // Validate state against known constraints from confirmed actions
+        validateStateAgainstKnownConstraints: function(state) {
+            // Check each confirmed action to see if this state could support it
+            const recentActions = this.confirmedActions.slice(-10); // Check last 10 actions
+            
+            for (const action of recentActions) {
+                if (action.type === 'spent_resources' && action.player && state[action.player]) {
+                    // This player must have had enough resources to spend
+                    const playerState = state[action.player];
+                    for (const [resource, amount] of Object.entries(action.cost)) {
+                        if (playerState[resource] < amount) {
+                            return false; // This state couldn't support this action
+                        }
+                    }
+                }
+                
+                if (action.type === 'traded_complex' && action.trader && state[action.trader]) {
+                    // Trader must have had enough resources to give
+                    const traderState = state[action.trader];
+                    for (const [resource, amount] of Object.entries(action.traderGave)) {
+                        if (traderState[resource] < amount) {
+                            return false;
+                        }
+                    }
+                }
+                
+                if (action.type === 'bank_trade' && action.player && state[action.player]) {
+                    // Player must have had enough resources for bank trade
+                    const playerState = state[action.player];
+                    for (const [resource, amount] of Object.entries(action.gave)) {
+                        if (playerState[resource] < amount) {
+                            return false;
+                        }
+                    }
+                }
+            }
+            
+            return true;
+        },
+        
+        // Apply aggressive pruning when state count gets too high
+        applyAggressivePruning: function(states) {
+            if (states.length <= 100) return states;
+            
+            console.log(`[PRUNE] Applying aggressive pruning to ${states.length} states`);
+            
+            // Strategy 1: Keep states that are most "central" (closest to average)
+            const averageState = this.calculateAverageState(states);
+            
+            // Calculate distance from average for each state
+            const statesWithDistance = states.map(state => ({
+                state: state,
+                distance: this.calculateStateDistance(state, averageState)
+            }));
+            
+            // Sort by distance and keep the most central states
+            statesWithDistance.sort((a, b) => a.distance - b.distance);
+            
+            // Keep top 100 most central states
+            const prunedStates = statesWithDistance.slice(0, 100).map(item => item.state);
+            
+            console.log(`[PRUNE] Aggressively pruned from ${states.length} to ${prunedStates.length} states`);
+            return prunedStates;
+        },
+        
+        // Calculate average resource counts across all states
+        calculateAverageState: function(states) {
+            const averageState = {};
+            const playerCounts = {};
+            
+            // Initialize averages
+            for (const state of states) {
+                for (const [player, resources] of Object.entries(state)) {
+                    if (!averageState[player]) {
+                        averageState[player] = { lumber: 0, brick: 0, wool: 0, grain: 0, ore: 0 };
+                        playerCounts[player] = 0;
+                    }
+                    playerCounts[player]++;
+                    
+                    for (const [resource, amount] of Object.entries(resources)) {
+                        averageState[player][resource] += amount;
+                    }
+                }
+            }
+            
+            // Calculate averages
+            for (const [player, resources] of Object.entries(averageState)) {
+                for (const resource of Object.keys(resources)) {
+                    averageState[player][resource] /= playerCounts[player];
+                }
+            }
+            
+            return averageState;
+        },
+        
+        // Calculate distance between two states
+        calculateStateDistance: function(state1, state2) {
+            let totalDistance = 0;
+            
+            for (const [player, resources] of Object.entries(state1)) {
+                if (state2[player]) {
+                    for (const [resource, amount] of Object.entries(resources)) {
+                        const diff = amount - (state2[player][resource] || 0);
+                        totalDistance += diff * diff; // Squared distance
+                    }
+                }
+            }
+            
+            return Math.sqrt(totalDistance);
         },
         
         fixImpossibleState: function() {
