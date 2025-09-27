@@ -2,7 +2,7 @@
     "use strict";
     
     console.log("Colonist Card Counter extension loaded");
-        console.log("Version 1.3.9 - Fixed turn order sorting and duplicate action bug");
+        console.log("Version 1.4.0 - Player table now always shows the user at the bottom");
     
     // Advanced game state tracking system
     window.gameState = {
@@ -329,8 +329,16 @@
             // Add any remaining players that aren't in turn order yet
             const remainingPlayers = allPlayers.filter(player => !this.turnOrder.includes(player));
             
-            const finalOrder = [...orderedPlayers, ...remainingPlayers];
-            console.log(`[TURN_ORDER] Final player order for table:`, finalOrder);
+            let finalOrder = [...orderedPlayers, ...remainingPlayers];
+            
+            // Always move the current player to the bottom of the list
+            const currentPlayer = this.getCurrentPlayer();
+            if (finalOrder.includes(currentPlayer)) {
+                finalOrder = finalOrder.filter(p => p !== currentPlayer);
+                finalOrder.push(currentPlayer);
+            }
+            
+            console.log(`[TURN_ORDER] Final player order for table (user at bottom):`, finalOrder);
             return finalOrder;
         },
         
