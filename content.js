@@ -2,7 +2,7 @@
     "use strict";
     
     console.log("Colonist Card Counter extension loaded");
-    console.log("Version 1.4.7 - Added Year of Plenty card support and bank resource tracking");
+    console.log("Version 1.4.8 - Fixed table display timing and [object Object] player name issue");
     
     // Advanced game state tracking system
     window.gameState = {
@@ -139,10 +139,10 @@
                     console.log(`[MODE] Detected 1v1 or minimal player game mode (${playerCount} players)`);
                 }
                 
-                // Add player to resource table if it exists
+                // Add player to resource table if it exists (pass playerName string, not player object)
                 const resourceTable = document.getElementById('resource-table');
                 if (resourceTable && resourceTable.querySelector('tbody')) {
-                    this.addPlayerToResourceTable(resourceTable.querySelector('tbody'), this.players[playerName]);
+                    this.addPlayerToResourceTable(resourceTable.querySelector('tbody'), playerName);
                 }
             }
             return this.players[playerName];
@@ -853,12 +853,22 @@
             // Clear existing rows
             tbody.innerHTML = '';
             
-            // Don't show resource table during early initial placement
-            // Only show it after second settlement round starts (when turn order tracking begins)
-            if (this.gamePhase === 'initial' && this.turnOrder.length === 0) {
-                console.log(`[TABLE] Hiding resource table during early initial placement`);
+            // Don't show resource table during initial placement
+            // Only show it when:
+            // 1. Main game has started, OR 
+            // 2. Players actually have resources (from second settlement placement)
+            const hasAnyResources = this.possibleStates.some(state => 
+                Object.values(state).some(player => 
+                    Object.values(player).some(amount => amount > 0)
+                )
+            );
+            
+            if (this.gamePhase === 'initial' && !hasAnyResources) {
+                console.log(`[TABLE] Hiding resource table during initial placement - waiting for second settlement resources`);
                 return;
             }
+            
+            console.log(`[TABLE] Showing resource table - gamePhase: ${this.gamePhase}, hasResources: ${hasAnyResources}`);
             
             // Get all players from all states
             const allPlayers = new Set();
