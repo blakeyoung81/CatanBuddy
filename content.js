@@ -2,7 +2,7 @@
     "use strict";
     
     console.log("Colonist Card Counter extension loaded");
-    console.log("Version 1.4.15 - Enhanced game log container detection with comprehensive fallback methods and aggressive timing");
+    console.log("Version 1.4.16 - Player-specific seven statistics: individual roll tracking and personalized seven risk probabilities");
     
     // Advanced game state tracking system
     window.gameState = {
@@ -13,6 +13,7 @@
         possibleStates: [], // Array of all possible game states
         confirmedActions: [], // Confirmed actions from the log
         sevenCounts: {}, // Track number of sevens each player has rolled
+        playerRollCounts: {}, // Track total rolls per player
         
         // Initialize dice counts and state tracking
         init: function() {
@@ -115,24 +116,36 @@
             return expectedPercentages[sum] || 0;
         },
 
-        // Function to calculate probability of reaching a player's turn without rolling a seven
-        calculateTurnProbabilities: function() {
-            const turnOrder = this.getPlayersSortedByTurnOrder();
+        // Function to calculate each player's probability of rolling a seven on their next turn
+        calculatePlayerSevenProbabilities: function() {
             const probabilities = {};
             
-            // Probability of NOT rolling a 7 on a single roll is 30/36 = 5/6
-            const noSevenProb = 30/36;
+            // Theoretical probability of rolling a 7 is 6/36 = 1/6 = 16.67%
+            const theoreticalSevenProb = 6/36;
             
-            for (let i = 0; i < turnOrder.length; i++) {
-                const playerName = turnOrder[i];
-                // Each player needs (i+1) rolls to complete (all players before them + their own roll)
-                const rollsNeeded = i + 1;
-                // Probability is (5/6)^rollsNeeded
-                const probability = Math.pow(noSevenProb, rollsNeeded);
+            for (const playerName in this.players) {
+                const playerRolls = this.playerRollCounts[playerName] || 0;
+                const playerSevens = this.sevenCounts[playerName] || 0;
+                
+                let sevenProbability;
+                let probabilityType;
+                
+                if (playerRolls >= 3) {
+                    // Use player's historical rate if they have enough rolls
+                    sevenProbability = playerSevens / playerRolls;
+                    probabilityType = 'historical';
+                } else {
+                    // Use theoretical probability for new players
+                    sevenProbability = theoreticalSevenProb;
+                    probabilityType = 'theoretical';
+                }
+                
                 probabilities[playerName] = {
-                    probability: probability,
-                    percentage: (probability * 100).toFixed(1),
-                    rollsNeeded: rollsNeeded
+                    probability: sevenProbability,
+                    percentage: (sevenProbability * 100).toFixed(1),
+                    totalRolls: playerRolls,
+                    totalSevens: playerSevens,
+                    type: probabilityType
                 };
             }
             
@@ -150,10 +163,10 @@
                 // Clear existing rows
                 turnTbody.innerHTML = '';
                 
-                const turnOrder = this.getPlayersSortedByTurnOrder();
-                const probabilities = this.calculateTurnProbabilities();
+                const allPlayers = Object.keys(this.players);
+                const probabilities = this.calculatePlayerSevenProbabilities();
                 
-                if (turnOrder.length === 0) {
+                if (allPlayers.length === 0) {
                     // No players yet
                     const emptyRow = document.createElement('tr');
                     emptyRow.innerHTML = `
@@ -165,7 +178,11 @@
                     return;
                 }
                 
-                turnOrder.forEach((playerName, index) => {
+                // Sort players by turn order if available, otherwise alphabetically
+                const turnOrder = this.getPlayersSortedByTurnOrder();
+                const sortedPlayers = turnOrder.length > 0 ? turnOrder : allPlayers.sort();
+                
+                sortedPlayers.forEach((playerName, index) => {
                     const row = document.createElement('tr');
                     const player = this.players[playerName];
                     const playerColor = (player && player.color && player.color !== '#ffffff') ? player.color : '#ffffff';
@@ -176,41 +193,70 @@
                     nameCell.textContent = playerName;
                     row.appendChild(nameCell);
                     
-                    // No seven probability
-                    const probCell = document.createElement('td');
-                    probCell.style.cssText = 'padding: 3px 6px; text-align: center;';
+                    // Seven risk probability (likelihood they'll roll a 7 next)
+                    const riskCell = document.createElement('td');
+                    riskCell.style.cssText = 'padding: 3px 6px; text-align: center;';
                     const prob = probabilities[playerName];
                     if (prob) {
-                        probCell.textContent = `${prob.percentage}%`;
-                        // Color code based on risk level
-                        if (prob.probability > 0.7) {
-                            probCell.style.color = '#90EE90'; // Light green - safe
-                        } else if (prob.probability > 0.4) {
-                            probCell.style.color = '#FFD700'; // Gold - moderate risk
+                        riskCell.textContent = `${prob.percentage}%`;
+                        // Color code based on seven risk level
+                        if (prob.probability > 0.20) {
+                            riskCell.style.color = '#FF6B6B'; // Red - high seven risk
+                        } else if (prob.probability > 0.16) {
+                            riskCell.style.color = '#FFD700'; // Gold - normal risk
                         } else {
-                            probCell.style.color = '#FF6B6B'; // Red - high risk
+                            riskCell.style.color = '#90EE90'; // Green - low seven risk
+                        }
+                        // Add indicator for historical vs theoretical
+                        if (prob.type === 'theoretical') {
+                            riskCell.style.fontStyle = 'italic';
                         }
                     } else {
-                        probCell.textContent = '-';
+                        riskCell.textContent = '16.7%'; // Theoretical default
+                        riskCell.style.color = '#FFD700';
+                        riskCell.style.fontStyle = 'italic';
                     }
-                    row.appendChild(probCell);
+                    row.appendChild(riskCell);
                     
-                    // Seven count
-                    const sevenCell = document.createElement('td');
-                    sevenCell.style.cssText = 'padding: 3px 6px; text-align: center;';
+                    // Seven count / total rolls
+                    const countCell = document.createElement('td');
+                    countCell.style.cssText = 'padding: 3px 6px; text-align: center;';
                     const sevenCount = this.sevenCounts[playerName] || 0;
-                    sevenCell.textContent = sevenCount.toString();
-                    if (sevenCount > 0) {
-                        sevenCell.style.color = '#FF6B6B'; // Red for sevens
-                        sevenCell.style.fontWeight = 'bold';
+                    const totalRolls = this.playerRollCounts[playerName] || 0;
+                    if (totalRolls > 0) {
+                        countCell.textContent = `${sevenCount}/${totalRolls}`;
+                        if (sevenCount > 0) {
+                            countCell.style.color = '#FF6B6B'; // Red for any sevens
+                            countCell.style.fontWeight = 'bold';
+                        }
+                    } else {
+                        countCell.textContent = '0/0';
+                        countCell.style.color = '#888888';
+                        countCell.style.fontStyle = 'italic';
                     }
-                    row.appendChild(sevenCell);
+                    row.appendChild(countCell);
                     
-                    // Turn order position
-                    const orderCell = document.createElement('td');
-                    orderCell.style.cssText = 'padding: 3px 6px; text-align: center;';
-                    orderCell.textContent = (index + 1).toString();
-                    row.appendChild(orderCell);
+                    // Average percentage (historical rate)
+                    const avgCell = document.createElement('td');
+                    avgCell.style.cssText = 'padding: 3px 6px; text-align: center;';
+                    if (totalRolls >= 3) {
+                        const actualRate = (sevenCount / totalRolls * 100).toFixed(1);
+                        avgCell.textContent = `${actualRate}%`;
+                        const theoretical = 16.7;
+                        const actualValue = parseFloat(actualRate);
+                        if (actualValue > theoretical + 5) {
+                            avgCell.style.color = '#FF6B6B'; // Red - rolls sevens more than expected
+                        } else if (actualValue < theoretical - 5) {
+                            avgCell.style.color = '#90EE90'; // Green - rolls sevens less than expected
+                        } else {
+                            avgCell.style.color = '#FFD700'; // Gold - normal range
+                        }
+                    } else {
+                        avgCell.textContent = '16.7%';
+                        avgCell.style.color = '#888888';
+                        avgCell.style.fontStyle = 'italic';
+                    }
+                    row.appendChild(avgCell);
                     
                     turnTbody.appendChild(row);
                 });
@@ -1253,14 +1299,14 @@
             turnHeader.innerHTML = `
                 <tr>
                     <th colspan="4" style="text-align: center; padding: 5px; border-top: 2px solid #666; border-bottom: 1px solid #666;">
-                        Turn Order & Seven Tracking
+                        Player Seven Statistics
                     </th>
                 </tr>
                 <tr style="border-bottom: 1px solid #666;">
                     <th style="padding: 3px 6px;">Player</th>
-                    <th style="padding: 3px 6px;">No 7 %</th>
-                    <th style="padding: 3px 6px;">Sevens</th>
-                    <th style="padding: 3px 6px;">Order</th>
+                    <th style="padding: 3px 6px;">7 Risk %</th>
+                    <th style="padding: 3px 6px;">7s/Rolls</th>
+                    <th style="padding: 3px 6px;">Avg %</th>
                 </tr>
             `;
             table.appendChild(turnHeader);
@@ -1716,13 +1762,19 @@
                     window.gameState.addPlayer(playerName, playerColor);
                     window.gameState.incrementDiceCount(sum);
                     
-                    // Track sevens specifically
+                    // Track player-specific roll counts
+                    if (!window.gameState.playerRollCounts[playerName]) {
+                        window.gameState.playerRollCounts[playerName] = 0;
+                    }
+                    window.gameState.playerRollCounts[playerName]++;
+                    
+                    // Track sevens specifically for this player
                     if (sum === 7) {
                         if (!window.gameState.sevenCounts[playerName]) {
                             window.gameState.sevenCounts[playerName] = 0;
                         }
                         window.gameState.sevenCounts[playerName]++;
-                        console.log(`[SEVEN] ${playerName} rolled a seven! Total sevens: ${window.gameState.sevenCounts[playerName]}`);
+                        console.log(`[SEVEN] ${playerName} rolled a seven! Player sevens: ${window.gameState.sevenCounts[playerName]}/${window.gameState.playerRollCounts[playerName]} rolls`);
                     }
                     
                     // This player is actively rolling, so they're likely the current player
