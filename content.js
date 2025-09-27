@@ -2,7 +2,7 @@
     "use strict";
     
     console.log("Colonist Card Counter extension loaded");
-        console.log("Version 1.4.2 - Smarter Monopoly detection and state pruning");
+    console.log("Version 1.4.3 - Dynamic turn order detection for all player counts");
     
     // Advanced game state tracking system
     window.gameState = {
@@ -1934,6 +1934,7 @@
                     
                     // Player is actively building, so they're likely the current player
                     window.gameState.setCurrentPlayer(playerName);
+                    window.gameState.addPlayer(playerName); // Ensure player exists
                     
                     // Determine what was built/placed and the cost
                     let cost = {};
@@ -1972,7 +1973,9 @@
                                 console.log(`[BUILD] Settlement placement #${window.gameState.initialPlacements} by ${playerName}`);
                                 
                                 // Second settlement placement determines turn order (players go in reverse order for second settlements)
-                                if (window.gameState.initialPlacements >= 5) { // After first round of settlements (4 players), second settlements determine turn order
+                                const numPlayers = Object.keys(window.gameState.players).length;
+                                if (window.gameState.initialPlacements > numPlayers) { // Start tracking after the first round of settlements
+                                    console.log(`[TURN_ORDER] Second settlement round detected for ${numPlayers}-player game.`);
                                     window.gameState.addToTurnOrder(playerName);
                                 }
                             }
