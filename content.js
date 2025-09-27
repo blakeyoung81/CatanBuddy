@@ -2,7 +2,7 @@
     "use strict";
     
     console.log("Colonist Card Counter extension loaded");
-        console.log("Version 1.3.8 - Simplified state pruning - natural elimination when states become logically impossible");
+        console.log("Version 1.3.9 - Fixed turn order sorting and duplicate action bug");
     
     // Advanced game state tracking system
     window.gameState = {
@@ -312,7 +312,9 @@
         // Track turn order based on second settlement placement
         addToTurnOrder: function(playerName) {
             if (!this.turnOrder.includes(playerName)) {
-                this.turnOrder.push(playerName);
+                // Players place their second settlement in reverse game order (P4, P3, P2, P1).
+                // unshift() adds them to the front, so the final array is in correct game order (P1, P2, P3, P4).
+                this.turnOrder.unshift(playerName);
                 console.log(`[TURN_ORDER] Added ${playerName} to turn order. Current order:`, this.turnOrder);
             }
         },
@@ -1960,11 +1962,16 @@
                 if (playerSpan) {
                     const playerName = playerSpan.textContent.trim();
                     console.log(`[BUY] Player: ${playerName}`);
-                    
-                    // Player is actively buying, so they're likely the current player
                     window.gameState.setCurrentPlayer(playerName);
+
+                    const lastAction = window.gameState.confirmedActions[window.gameState.confirmedActions.length - 1];
+                    if (lastAction && lastAction.type === 'spent_resources' && lastAction.reason.includes('bought Development Card') && lastAction.player === playerName) {
+                       // It's possible the game log creates a duplicate entry for a single purchase.
+                       // If the last action was the exact same, skip this one.
+                       console.log(`[BUY] Duplicate 'bought Development Card' action detected for ${playerName}. Skipping.`);
+                       return true; // Pretend we handled it to prevent other parsers from running.
+                    }
                     
-                    // Check what was bought by looking at images and text
                     let cost = {};
                     let itemBought = '';
                     
