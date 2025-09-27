@@ -2,7 +2,7 @@
     "use strict";
     
     console.log("Colonist Card Counter extension loaded");
-    console.log("Version 1.4.8 - Fixed table display timing and [object Object] player name issue");
+    console.log("Version 1.4.9 - Implemented clockwise player arrangement from extension user perspective");
     
     // Advanced game state tracking system
     window.gameState = {
@@ -335,6 +335,7 @@
         // Get players sorted by turn order
         getPlayersSortedByTurnOrder: function() {
             const allPlayers = Object.keys(this.players);
+            const extensionUser = this.getExtensionUser();
             
             // Players in turn order come first
             const orderedPlayers = this.turnOrder.filter(player => this.players[player]);
@@ -342,13 +343,40 @@
             // Add any remaining players that aren't in turn order yet
             const remainingPlayers = allPlayers.filter(player => !this.turnOrder.includes(player));
             
-            let finalOrder = [...orderedPlayers, ...remainingPlayers];
+            let finalOrder = [];
             
-            // Always move the extension user to the bottom of the list
-            const extensionUser = this.getExtensionUser();
-            if (finalOrder.includes(extensionUser)) {
-                finalOrder = finalOrder.filter(p => p !== extensionUser);
-                finalOrder.push(extensionUser);
+            if (orderedPlayers.length > 0 && orderedPlayers.includes(extensionUser)) {
+                // Find the extension user's position in turn order
+                const userIndex = orderedPlayers.indexOf(extensionUser);
+                console.log(`[TURN_ORDER] Extension user ${extensionUser} is at position ${userIndex + 1} of ${orderedPlayers.length}`);
+                
+                // Arrange other players starting from the next player after the user (wrapping around)
+                // This mimics the clockwise seating arrangement from the user's perspective
+                const otherPlayers = orderedPlayers.filter(p => p !== extensionUser);
+                const reorderedPlayers = [];
+                
+                // Start from the player after the user and wrap around
+                for (let i = 1; i < orderedPlayers.length; i++) {
+                    const nextIndex = (userIndex + i) % orderedPlayers.length;
+                    const nextPlayer = orderedPlayers[nextIndex];
+                    if (nextPlayer !== extensionUser) {
+                        reorderedPlayers.push(nextPlayer);
+                    }
+                }
+                
+                // Final order: other players in clockwise order, then user at bottom
+                finalOrder = [...reorderedPlayers, ...remainingPlayers, extensionUser];
+                
+                console.log(`[TURN_ORDER] Clockwise arrangement from user perspective:`, reorderedPlayers);
+            } else {
+                // Fallback: original logic if user not in turn order yet
+                finalOrder = [...orderedPlayers, ...remainingPlayers];
+                
+                // Move extension user to bottom if present
+                if (finalOrder.includes(extensionUser)) {
+                    finalOrder = finalOrder.filter(p => p !== extensionUser);
+                    finalOrder.push(extensionUser);
+                }
             }
             
             console.log(`[TURN_ORDER] Final player order for table (user at bottom):`, finalOrder);
