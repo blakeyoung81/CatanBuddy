@@ -2,7 +2,7 @@
     "use strict";
     
     console.log("Colonist Card Counter extension loaded");
-    console.log("Version 1.4.3 - Dynamic turn order detection for all player counts");
+    console.log("Version 1.4.4 - Fixed 'you' resolution and duplicate action detection");
     
     // Advanced game state tracking system
     window.gameState = {
@@ -115,8 +115,8 @@
         addPlayer: function(playerName, playerColor = '#ffffff') {
             // Never add "you" as a literal player - resolve it first
             if (playerName && playerName.toLowerCase() === 'you') {
-                console.log(`[PLAYER] Resolving 'you' to current player before adding`);
-                playerName = this.getCurrentPlayer();
+                console.log(`[PLAYER] Resolving 'you' to extension user before adding`);
+                playerName = this.getExtensionUser();
             }
             
             console.log(`Adding player: ${playerName} with color: ${playerColor}`);
@@ -196,32 +196,45 @@
         // Track processed entries to prevent duplicates
         processedEntries: new Set(),
         
-        // Track current player name for "You" messages
+        // Track current player name for turn tracking
         currentPlayer: null,
+        
+        // Track the extension user (who "You" refers to in messages)
+        extensionUser: null,
         
         // Track active development card effects
         activeCardEffects: {},
         
-        // Helper function to determine current player
+        // Helper function to determine current player (for turn tracking)
         getCurrentPlayer: function() {
             if (this.currentPlayer) {
                 return this.currentPlayer;
             }
             
+            // If we don't know the current player, fall back to extension user
+            return this.getExtensionUser();
+        },
+        
+        // Helper function to determine the extension user (who "You" refers to)
+        getExtensionUser: function() {
+            if (this.extensionUser) {
+                return this.extensionUser;
+            }
+            
             // Method 1: Try to get username from the header profile element (most reliable)
             const headerUsernameElement = document.getElementById('header_profile_username');
             if (headerUsernameElement && headerUsernameElement.textContent.trim()) {
-                this.currentPlayer = headerUsernameElement.textContent.trim();
-                console.log(`[PLAYER] Found current player from header: ${this.currentPlayer}`);
-                return this.currentPlayer;
+                this.extensionUser = headerUsernameElement.textContent.trim();
+                console.log(`[USER] Found extension user from header: ${this.extensionUser}`);
+                return this.extensionUser;
             }
             
             // Method 2: Alternative selector for the header username
             const headerUsernameElement2 = document.querySelector('.header_profile_username');
             if (headerUsernameElement2 && headerUsernameElement2.textContent.trim()) {
-                this.currentPlayer = headerUsernameElement2.textContent.trim();
-                console.log(`[PLAYER] Found current player from header (alt selector): ${this.currentPlayer}`);
-                return this.currentPlayer;
+                this.extensionUser = headerUsernameElement2.textContent.trim();
+                console.log(`[USER] Found extension user from header (alt selector): ${this.extensionUser}`);
+                return this.extensionUser;
             }
             
             // Method 3: Look for username in any profile-related elements
@@ -229,25 +242,25 @@
             for (const element of profileElements) {
                 const text = element.textContent.trim();
                 if (text && text.length > 0 && text.length < 50 && !text.includes(' ')) {
-                    this.currentPlayer = text;
-                    console.log(`[PLAYER] Found current player from profile element: ${this.currentPlayer}`);
-                    return this.currentPlayer;
+                    this.extensionUser = text;
+                    console.log(`[USER] Found extension user from profile element: ${this.extensionUser}`);
+                    return this.extensionUser;
                 }
             }
             
             // Fallback: Try to find BlakeYoung in tracked players (legacy support)
             const blakeYoung = Object.keys(this.players).find(name => name.includes('BlakeYoung'));
             if (blakeYoung) {
-                this.currentPlayer = blakeYoung;
-                console.log(`[PLAYER] Using tracked BlakeYoung as fallback: ${this.currentPlayer}`);
-                return this.currentPlayer;
+                this.extensionUser = blakeYoung;
+                console.log(`[USER] Using tracked BlakeYoung as fallback: ${this.extensionUser}`);
+                return this.extensionUser;
             }
             
             // Ultimate fallback
-            this.currentPlayer = "BlakeYoung";
-            console.log(`[PLAYER] Using hardcoded fallback: ${this.currentPlayer}`);
+            this.extensionUser = "BlakeYoung";
+            console.log(`[USER] Using hardcoded fallback: ${this.extensionUser}`);
             
-            return this.currentPlayer;
+            return this.extensionUser;
         },
         
         // Function to set current player explicitly
@@ -264,20 +277,20 @@
         // Clean up any "you" player that was incorrectly added and merge their resources
         cleanupYouPlayer: function() {
             if (this.players['you'] || this.players['You']) {
-                const currentPlayer = this.getCurrentPlayer();
-                console.log(`[PLAYER] Cleaning up 'you' player, merging to: ${currentPlayer}`);
+                const extensionUser = this.getExtensionUser();
+                console.log(`[PLAYER] Cleaning up 'you' player, merging to: ${extensionUser}`);
                 
-                // Merge resources from "you" to the actual current player
+                // Merge resources from "you" to the actual extension user
                 ['you', 'You'].forEach(youKey => {
                     if (this.players[youKey]) {
                         const youPlayer = this.players[youKey];
-                        if (!this.players[currentPlayer]) {
-                            this.addPlayer(currentPlayer);
+                        if (!this.players[extensionUser]) {
+                            this.addPlayer(extensionUser);
                         }
                         
                         // Merge resources
                         for (const [resource, amount] of Object.entries(youPlayer.resources)) {
-                            this.players[currentPlayer].resources[resource] += amount;
+                            this.players[extensionUser].resources[resource] += amount;
                         }
                         
                         // Remove the "you" player
@@ -286,17 +299,17 @@
                     }
                 });
                 
-                // Also update all possible states to replace "you" with current player
+                // Also update all possible states to replace "you" with extension user
                 this.possibleStates.forEach(state => {
                     ['you', 'You'].forEach(youKey => {
                         if (state[youKey]) {
-                            if (!state[currentPlayer]) {
-                                state[currentPlayer] = { lumber: 0, brick: 0, wool: 0, grain: 0, ore: 0 };
+                            if (!state[extensionUser]) {
+                                state[extensionUser] = { lumber: 0, brick: 0, wool: 0, grain: 0, ore: 0 };
                             }
                             
                             // Merge resources in this state
                             for (const [resource, amount] of Object.entries(state[youKey])) {
-                                state[currentPlayer][resource] += amount;
+                                state[extensionUser][resource] += amount;
                             }
                             
                             // Remove "you" from this state
@@ -331,36 +344,55 @@
             
             let finalOrder = [...orderedPlayers, ...remainingPlayers];
             
-            // Always move the current player to the bottom of the list
-            const currentPlayer = this.getCurrentPlayer();
-            if (finalOrder.includes(currentPlayer)) {
-                finalOrder = finalOrder.filter(p => p !== currentPlayer);
-                finalOrder.push(currentPlayer);
+            // Always move the extension user to the bottom of the list
+            const extensionUser = this.getExtensionUser();
+            if (finalOrder.includes(extensionUser)) {
+                finalOrder = finalOrder.filter(p => p !== extensionUser);
+                finalOrder.push(extensionUser);
             }
             
             console.log(`[TURN_ORDER] Final player order for table (user at bottom):`, finalOrder);
             return finalOrder;
         },
         
-        // Initialize and cache the current player early
+        // Initialize and cache the extension user early
         initializeCurrentPlayer: function() {
-            console.log(`[PLAYER] Initializing current player detection...`);
-            const detectedPlayer = this.getCurrentPlayer();
-            if (detectedPlayer) {
-                console.log(`[PLAYER] Successfully initialized current player: ${detectedPlayer}`);
+            console.log(`[USER] Initializing extension user detection...`);
+            const detectedUser = this.getExtensionUser();
+            if (detectedUser) {
+                console.log(`[USER] Successfully initialized extension user: ${detectedUser}`);
             } else {
-                console.log(`[PLAYER] Failed to detect current player during initialization`);
+                console.log(`[USER] Failed to detect extension user during initialization`);
             }
-            
         },
         
         
         // Advanced state management methods
         addAction: function(action) {
+            // Enhanced duplicate detection for build actions
+            if (action.type === 'spent_resources' && action.building) {
+                // Check if we just processed a similar build action for the same player
+                const recentActions = this.confirmedActions.slice(-5); // Check last 5 actions
+                const duplicateBuild = recentActions.find(recent => 
+                    recent.type === 'spent_resources' && 
+                    recent.player === action.player && 
+                    recent.building === action.building &&
+                    JSON.stringify(recent.cost) === JSON.stringify(action.cost) &&
+                    (Date.now() - recent.timestamp) < 2000 // Within 2 seconds
+                );
+                
+                if (duplicateBuild) {
+                    console.log(`[BUILD] Duplicate build action detected for ${action.player} building ${action.building}. Skipping.`);
+                    return; // Skip this duplicate action
+                }
+            }
+            
             // Create unique identifier for this action to prevent duplicates
             const actionId = `${action.type}-${action.player || 'unknown'}-${Date.now()}-${Math.random()}`;
             
-            this.confirmedActions.push({...action, id: actionId});
+            // Add timestamp for duplicate detection
+            const actionWithTimestamp = {...action, id: actionId, timestamp: Date.now()};
+            this.confirmedActions.push(actionWithTimestamp);
             
             // Track game phase transitions
             if (action.type === 'dice_roll' && this.gamePhase === 'initial') {
@@ -641,7 +673,7 @@
                         } else {
                             console.log(`[STATE] SPECIFIC ROBBERY ELIMINATED STATE - victim doesn't have ${action.resource}`);
                             // This state is eliminated because victim doesn't have the specific resource
-                    }
+                        }
                     break;
                     
                 case 'monopoly':
@@ -1723,7 +1755,7 @@
             console.error("Error parsing Monopoly action:", error);
         }
         return false;
-     }
+}
 
     function parseStealAction(entry, messageSpan) {
         try {
@@ -1758,19 +1790,19 @@
                             if (stolenResource) {
                                 console.log(`[STEAL] YOU STOLE KNOWN RESOURCE: You stole ${stolenResource} from ${victim}`);
                                 
-                                // Get the current player name
-                                const currentPlayer = window.gameState.getCurrentPlayer();
-                                console.log(`[STEAL] Current player (You) is: ${currentPlayer}`);
-                                console.log(`[STEAL] Processing direct steal: ${currentPlayer} +1 ${stolenResource}, ${victim} -1 ${stolenResource}`);
+                                // Get the extension user name (who "You" refers to)
+                                const extensionUser = window.gameState.getExtensionUser();
+                                console.log(`[STEAL] Extension user (You) is: ${extensionUser}`);
+                                console.log(`[STEAL] Processing direct steal: ${extensionUser} +1 ${stolenResource}, ${victim} -1 ${stolenResource}`);
                                 
                                 // Make sure both players exist
-                                window.gameState.addPlayer(currentPlayer);
+                                window.gameState.addPlayer(extensionUser);
                                 window.gameState.addPlayer(victim);
                                 
                                 // Process as specific resource steal - no uncertainty here!
                                 window.gameState.addAction({
                                     type: 'robbed_specific',
-                                    robber: currentPlayer,
+                                    robber: extensionUser,
                                     victim: victim,
                                     resource: stolenResource
                                 });
@@ -1788,10 +1820,10 @@
                         const robber = stealMatch[1];
                         let victim = stealMatch[2];
                         
-                        // Resolve "you" to the actual current player
+                        // Resolve "you" to the actual extension user (not current turn player!)
                         if (victim.toLowerCase() === 'you') {
-                            victim = window.gameState.getCurrentPlayer();
-                            console.log(`[STEAL] Resolved 'you' to current player: ${victim}`);
+                            victim = window.gameState.getExtensionUser();
+                            console.log(`[STEAL] Resolved 'you' to extension user: ${victim}`);
                         }
                         
                         console.log(`[STEAL] Third-person steal - Robber: ${robber}, Victim: ${victim}`);
@@ -1893,9 +1925,9 @@
             return false;
         } catch (error) {
             console.error("Error parsing card usage:", error);
-        return false;
+            return false;
+        }
     }
-}
 
     function parseRobberAction(entry, messageSpan) {
         try {
