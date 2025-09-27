@@ -2,7 +2,7 @@
     "use strict";
     
         console.log("Colonist Card Counter extension loaded");
-        console.log("Version 1.3.4 - Fixed 'you' player resolution, improved current player detection");
+        console.log("Version 1.3.5 - Added turn order tracking, table sorted by second settlement placement order");
     
     // Advanced game state tracking system
     window.gameState = {
@@ -184,6 +184,7 @@
         // Game phase tracking
         gamePhase: 'initial', // 'initial' or 'main'
         initialPlacements: 0,
+        turnOrder: [], // Track the order players place their second settlement
         
         isInitialPlacementPhase: function() {
             // Once a dice roll happens, we're definitely in the main game
@@ -324,6 +325,29 @@
                 
                 console.log(`[PLAYER] Cleaned up 'you' references in all game states`);
             }
+        },
+        
+        // Track turn order based on second settlement placement
+        addToTurnOrder: function(playerName) {
+            if (!this.turnOrder.includes(playerName)) {
+                this.turnOrder.push(playerName);
+                console.log(`[TURN_ORDER] Added ${playerName} to turn order. Current order:`, this.turnOrder);
+            }
+        },
+        
+        // Get players sorted by turn order
+        getPlayersSortedByTurnOrder: function() {
+            const allPlayers = Object.keys(this.players);
+            
+            // Players in turn order come first
+            const orderedPlayers = this.turnOrder.filter(player => this.players[player]);
+            
+            // Add any remaining players that aren't in turn order yet
+            const remainingPlayers = allPlayers.filter(player => !this.turnOrder.includes(player));
+            
+            const finalOrder = [...orderedPlayers, ...remainingPlayers];
+            console.log(`[TURN_ORDER] Final player order for table:`, finalOrder);
+            return finalOrder;
         },
         
         // Advanced state management methods
@@ -731,9 +755,18 @@
             }
             Object.keys(this.players).forEach(player => allPlayers.add(player));
             
-            // Create rows for each player
-            for (const playerName of allPlayers) {
-                this.addPlayerToResourceTable(tbody, playerName);
+            // Get players sorted by turn order (second settlement placement order)
+            const orderedPlayers = this.getPlayersSortedByTurnOrder();
+            const remainingPlayers = Array.from(allPlayers).filter(player => !orderedPlayers.includes(player));
+            const finalPlayerOrder = [...orderedPlayers, ...remainingPlayers];
+            
+            console.log(`[TABLE] Building table with player order:`, finalPlayerOrder);
+            
+            // Create rows for each player in turn order
+            for (const playerName of finalPlayerOrder) {
+                if (allPlayers.has(playerName)) {
+                    this.addPlayerToResourceTable(tbody, playerName);
+                }
             }
         },
         
@@ -1854,6 +1887,18 @@
                         
                         if (isInitialPlacement && (actionType === 'Settlement' || actionType === 'Road')) {
                             console.log(`[BUILD] INITIAL PLACEMENT: ${playerName} placed initial ${actionType} (no cost)`);
+                            
+                            // Track settlement placements for turn order
+                            if (actionType === 'Settlement') {
+                                window.gameState.initialPlacements++;
+                                console.log(`[BUILD] Settlement placement #${window.gameState.initialPlacements} by ${playerName}`);
+                                
+                                // Second settlement placement determines turn order (players go in reverse order for second settlements)
+                                if (window.gameState.initialPlacements >= 5) { // After first round of settlements (4 players), second settlements determine turn order
+                                    window.gameState.addToTurnOrder(playerName);
+                                }
+                            }
+                            
                             // Don't subtract resources during initial placement
                             return true;
                         } else {
