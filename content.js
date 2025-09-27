@@ -2,7 +2,7 @@
     "use strict";
     
     console.log("Colonist Card Counter extension loaded");
-    console.log("Version 1.4.4 - Fixed 'you' resolution and duplicate action detection");
+    console.log("Version 1.4.5 - Fixed resource table display and initial placement tracking");
     
     // Advanced game state tracking system
     window.gameState = {
@@ -775,14 +775,17 @@
         },
         
         getResourceRange: function(player, resource) {
-            if (this.possibleStates.length === 0) return { min: 0, max: 0, certain: true };
+            if (this.possibleStates.length === 0) return { min: 0, max: 0, certain: true, value: 0 };
             
             const values = this.possibleStates.map(state => 
                 state[player] ? (state[player][resource] || 0) : 0
             );
             
-            const min = Math.min(...values);
-            const max = Math.max(...values);
+            // Ensure all values are numbers
+            const numericValues = values.map(val => typeof val === 'number' ? val : 0);
+            
+            const min = Math.min(...numericValues);
+            const max = Math.max(...numericValues);
             
             return {
                 min: min,
@@ -800,13 +803,19 @@
             if (!firstState[player]) return 0;
             
             const total = ['lumber', 'brick', 'wool', 'grain', 'ore']
-                .reduce((sum, resource) => sum + (firstState[player][resource] || 0), 0);
+                .reduce((sum, resource) => {
+                    const value = firstState[player][resource];
+                    return sum + (typeof value === 'number' ? value : 0);
+                }, 0);
             
             // Verify that all states have the same total (they should!)
             const allTotals = this.possibleStates.map(state => {
                 if (!state[player]) return 0;
                 return ['lumber', 'brick', 'wool', 'grain', 'ore']
-                    .reduce((sum, resource) => sum + (state[player][resource] || 0), 0);
+                    .reduce((sum, resource) => {
+                        const value = state[player][resource];
+                        return sum + (typeof value === 'number' ? value : 0);
+                    }, 0);
             });
             
             const minTotal = Math.min(...allTotals);
@@ -825,6 +834,13 @@
             
             // Clear existing rows
             tbody.innerHTML = '';
+            
+            // Don't show resource table during early initial placement
+            // Only show it after second settlement round starts (when turn order tracking begins)
+            if (this.gamePhase === 'initial' && this.turnOrder.length === 0) {
+                console.log(`[TABLE] Hiding resource table during early initial placement`);
+                return;
+            }
             
             // Get all players from all states
             const allPlayers = new Set();
@@ -919,16 +935,21 @@
                 
                 const range = this.getResourceRange(playerName, resource);
                 if (range.certain) {
-                    cell.textContent = range.value;
-                    cell.style.backgroundColor = range.value > 0 ? 'rgba(0, 255, 0, 0.2)' : '';
-                    totalMin += range.value;
-                    totalMax += range.value;
+                    // Ensure we always display a number, never an object
+                    const displayValue = range.value !== null && range.value !== undefined ? range.value : 0;
+                    cell.textContent = displayValue.toString();
+                    cell.style.backgroundColor = displayValue > 0 ? 'rgba(0, 255, 0, 0.2)' : '';
+                    totalMin += displayValue;
+                    totalMax += displayValue;
                                 } else {
-                    cell.textContent = `${range.min}-${range.max}`;
+                    // Ensure min and max are numbers
+                    const minVal = range.min !== null && range.min !== undefined ? range.min : 0;
+                    const maxVal = range.max !== null && range.max !== undefined ? range.max : 0;
+                    cell.textContent = `${minVal}-${maxVal}`;
                     cell.style.backgroundColor = 'rgba(255, 255, 0, 0.2)'; // Yellow for uncertain
-                    cell.title = `Possible range: ${range.min} to ${range.max}`;
-                    totalMin += range.min;
-                    totalMax += range.max;
+                    cell.title = `Possible range: ${minVal} to ${maxVal}`;
+                    totalMin += minVal;
+                    totalMax += maxVal;
                 }
                 
                 row.appendChild(cell);
@@ -942,7 +963,9 @@
             
             // Calculate exact total from all possible states - should be the same across all states
             const exactTotal = this.getExactTotalCards(playerName);
-            totalCell.textContent = exactTotal;
+            // Ensure total is always a number
+            const displayTotal = exactTotal !== null && exactTotal !== undefined ? exactTotal : 0;
+            totalCell.textContent = displayTotal.toString();
             
             row.appendChild(totalCell);
             
