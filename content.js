@@ -2,7 +2,7 @@
     "use strict";
     
     console.log("Colonist Card Counter extension loaded");
-    console.log("Version 1.4.14 - Added turn probability calculations and seven tracking statistics");
+    console.log("Version 1.4.15 - Enhanced game log container detection with comprehensive fallback methods and aggressive timing");
     
     // Advanced game state tracking system
     window.gameState = {
@@ -1435,10 +1435,33 @@
         try {
             console.log("Searching for game feeds container...");
             
-            // Debug: log what's available in the DOM
+            // More comprehensive DOM debugging
             const allScrollers = document.querySelectorAll('[class*="virtualScroller"], [class*="Scroller"]');
             const feedMessages = document.querySelectorAll('.feedMessage-O8TLknGe');
-            console.log(`[DEBUG] Found ${allScrollers.length} scrollers and ${feedMessages.length} feed messages`);
+            const gameFeedsContainers = document.querySelectorAll('[class*="gameFeedsContainer"]');
+            const responsiveContainers = document.querySelectorAll('[class*="responsiveContainer"]');
+            
+            console.log(`[DEBUG] DOM State Check:`);
+            console.log(`  - Scrollers: ${allScrollers.length}`);
+            console.log(`  - Feed messages: ${feedMessages.length}`);
+            console.log(`  - Game feeds containers: ${gameFeedsContainers.length}`);
+            console.log(`  - Responsive containers: ${responsiveContainers.length}`);
+            console.log(`  - Document ready state: ${document.readyState}`);
+            
+            // Log all found containers for debugging
+            if (gameFeedsContainers.length > 0) {
+                gameFeedsContainers.forEach((container, i) => {
+                    console.log(`  - GameFeedsContainer ${i}: ${container.className}`);
+                });
+            }
+            
+            if (allScrollers.length > 0) {
+                allScrollers.forEach((scroller, i) => {
+                    console.log(`  - Scroller ${i}: ${scroller.className}`);
+                    const messages = scroller.querySelectorAll('.feedMessage-O8TLknGe');
+                    console.log(`    Contains ${messages.length} feed messages`);
+                });
+            }
             
             // Method 1: Look for the specific game feeds container structure
             const gameFeedsContainer = document.querySelector('.gameFeedsContainer-jBSxvDCV');
@@ -1501,6 +1524,53 @@
                 if (messagesInContainer.length >= 3) { // Arbitrary threshold
                     console.log(`✅ Found container with ${messagesInContainer.length} messages: ${container.className}`);
                     return container;
+                }
+            }
+            
+            // Method 7: Try specific selector combinations from the provided HTML
+            const specificSelectors = [
+                '.responsiveContainer-AS9_lPrM .virtualScroller-lSkdkGJi',
+                '.container-Phl3P_ZR .virtualScroller-lSkdkGJi',
+                '.virtualContainer-Y9hPMC2i .virtualScroller-lSkdkGJi',
+                '.gameFeedsContainer-jBSxvDCV .virtualScroller-lSkdkGJi'
+            ];
+            
+            for (const selector of specificSelectors) {
+                const element = document.querySelector(selector);
+                if (element) {
+                    console.log(`✅ Found element with specific selector "${selector}"`);
+                    return element;
+                }
+            }
+            
+            // Method 8: Look for containers with dice or game-related content
+            const gameKeywords = ['dice', 'roll', 'built', 'placed', 'robber', 'stole'];
+            for (const container of containers) {
+                const text = container.textContent || '';
+                const hasGameKeywords = gameKeywords.some(keyword => text.toLowerCase().includes(keyword));
+                if (hasGameKeywords && container.querySelectorAll('.feedMessage-O8TLknGe').length > 0) {
+                    console.log(`✅ Found game container by content keywords: ${container.className}`);
+                    return container;
+                }
+            }
+            
+            // Method 9: Try to wait a bit and search again (only if we have feedMessages but no container)
+            if (feedMessages.length > 0) {
+                console.log(`[DEBUG] Found ${feedMessages.length} feed messages but no container, searching parent hierarchy...`);
+                // Try every parent of every feed message
+                for (const message of feedMessages) {
+                    let parent = message.parentElement;
+                    let depth = 0;
+                    while (parent && depth < 15) {
+                        if (parent.className.includes('virtualScroller') || 
+                            parent.className.includes('gameFeedsContainer') ||
+                            parent.className.includes('responsiveContainer')) {
+                            console.log(`✅ Found container via deep parent search: ${parent.className}`);
+                    return parent;
+                        }
+                        parent = parent.parentElement;
+                        depth++;
+                    }
                 }
             }
             
@@ -2735,32 +2805,44 @@
         
         // Setup observer
         if (!setupObserver()) {
-            // If observer setup failed, retry periodically with better debugging
+            // If observer setup failed, retry periodically with better debugging and longer intervals
             let retryCount = 0;
-            const maxRetries = 10;
+            const maxRetries = 15; // Increased retries
             
             const retryInterval = setInterval(() => {
                 retryCount++;
                 console.log(`Retrying observer setup... (attempt ${retryCount}/${maxRetries})`);
                 
-                // Try to find container again
-                const retryContainer = findGameLogContainer();
-                if (retryContainer) {
-                    console.log("✅ Found container on retry!");
+                // Wait a bit longer for DOM to stabilize
+                setTimeout(() => {
+                    const retryContainer = findGameLogContainer();
+                    if (retryContainer) {
+                        console.log("✅ Found container on retry!");
                 if (setupObserver()) {
-                        console.log("✅ Observer setup successful on retry!");
+                            console.log("✅ Observer setup successful on retry!");
                     clearInterval(retryInterval);
                 }
-                } else {
-                    console.log("❌ Still no container found");
-                }
+                    } else {
+                        console.log("❌ Still no container found");
+                    }
+                }, 500); // Small delay within each retry
             
                 if (retryCount >= maxRetries) {
-                    console.log("❌ Max retries reached for 1v1 game");
+                    console.log("❌ Max retries reached");
                     console.log("💡 Try running debugCatanExtension() in console for manual troubleshooting");
+                    
+                    // Try one final aggressive attempt
+            setTimeout(() => {
+                        console.log("🔄 Final aggressive attempt...");
+                        const finalContainer = findGameLogContainer();
+                        if (finalContainer && setupObserver()) {
+                            console.log("✅ Final attempt successful!");
+                        }
+                    }, 2000);
+                    
                 clearInterval(retryInterval);
                 }
-            }, 3000);
+            }, 4000); // Increased interval time
         }
         
         console.log("Extension initialization complete");
@@ -2807,7 +2889,7 @@
         }
     };
     
-    // Start initialization when page loads
+    // Multiple initialization attempts with increasing delays for better DOM readiness
 if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', initializeExtension);
             } else {
@@ -2815,7 +2897,9 @@ if (document.readyState === 'loading') {
         setTimeout(initializeExtension, 1000);
     }
     
-    // Also try to initialize after a short delay
+    // Additional initialization attempts with longer delays
     setTimeout(initializeExtension, 2000);
+    setTimeout(initializeExtension, 5000);  // Additional attempt
+    setTimeout(initializeExtension, 10000); // Final attempt for slow-loading games
     
 })();
