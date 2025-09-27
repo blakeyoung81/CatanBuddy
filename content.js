@@ -2,7 +2,7 @@
     "use strict";
     
     console.log("Colonist Card Counter extension loaded");
-        console.log("Version 1.4.0 - Player table now always shows the user at the bottom");
+        console.log("Version 1.4.1 - Added support for Monopoly card");
     
     // Advanced game state tracking system
     window.gameState = {
@@ -644,6 +644,34 @@
                     }
                     break;
                     
+                case 'monopoly':
+                    console.log(`[STATE] Processing Monopoly: ${action.player} took all ${action.resource}, gaining ${action.amount}`);
+                    const monopolyState = JSON.parse(JSON.stringify(state));
+
+                    if (!monopolyState[action.player]) {
+                        monopolyState[action.player] = { lumber: 0, brick: 0, wool: 0, grain: 0, ore: 0 };
+                    }
+
+                    let totalStolen = 0;
+                    for (const player in monopolyState) {
+                        if (player !== action.player && monopolyState[player][action.resource] > 0) {
+                            totalStolen += monopolyState[player][action.resource];
+                            monopolyState[player][action.resource] = 0;
+                            console.log(`[STATE] ${player} lost all ${action.resource}`);
+                        }
+                    }
+
+                    // The log gives us the exact total, so we can use that to validate and correct.
+                    monopolyState[action.player][action.resource] += action.amount;
+                    console.log(`[STATE] ${action.player} gained ${action.amount} ${action.resource}`);
+                    
+                    if(totalStolen !== action.amount) {
+                        console.warn(`[STATE] Monopoly discrepancy: state predicted ${totalStolen} stolen, log reported ${action.amount}. Using log value.`);
+                    }
+
+                    newStates.push(monopolyState);
+                    break;
+                    
                 default:
                     newStates.push(state);
             }
@@ -1225,6 +1253,7 @@
                 parseTradeAction,
                 parseBankTradeAction,
                 parseDiscardAction,
+                parseMonopolyAction, // Monopoly should be checked before generic steal/card usage
                 parseStealAction,
                 parseCardUsageAction,
                 parseRobberAction,
@@ -1655,40 +1684,58 @@
         }
     }
     
-    function parseCardUsageAction(entry, messageSpan) {
+    function parseMonopolyAction(entry, messageSpan) {
         try {
             const text = messageSpan.textContent;
-            console.log(`[CARD] Checking text: "${text}"`);
             
-            if (text.includes('used') && text.includes('Road Building')) {
-                console.log(`[CARD] Found Road Building card usage`);
+            // Monopoly happens in two log entries: "Player used Monopoly" and then "Player stole X resource".
+            // We need to look ahead to the next log entry to confirm.
+            if (text.includes('used') && text.includes('Monopoly')) {
+                console.log(`[MONOPOLY] Found 'used Monopoly' message`);
                 
                 const playerSpan = messageSpan.querySelector('span[style*="color"]');
                 if (playerSpan) {
                     const playerName = playerSpan.textContent.trim();
-                    console.log(`[CARD] Player: ${playerName} used Road Building`);
-                    
-                    // Track that this player gets 2 free roads
-                    window.gameState.activeCardEffects[playerName] = {
-                        type: 'road_building',
-                        freeRoads: 2
-                    };
-                    
-                    console.log(`[CARD] ROAD BUILDING ACTIVATED: ${playerName} gets 2 free roads`);
-                    window.gameState.addPlayer(playerName);
-            return true;
-        } else {
-                    console.log(`[CARD] No player span found in card usage`);
-        }
-    } else {
-                console.log(`[CARD] Not a card usage message`);
+                    console.log(`[MONOPOLY] Player: ${playerName} used Monopoly`);
+
+                    // Look at the next log entry to see what was stolen
+                    const nextEntry = entry.nextElementSibling;
+                    if (nextEntry) {
+                        const nextMessageSpan = nextEntry.querySelector('.messagePart-XeUsOgLX');
+                        const nextText = nextMessageSpan ? nextMessageSpan.textContent : '';
+                        
+                        const stealMatch = nextText.match(/(\w+)\s+stole\s+(\d+)\s+/);
+                        if (stealMatch && stealMatch[1] === playerName) {
+                            const amount = parseInt(stealMatch[2], 10);
+                            const resourceImages = nextMessageSpan.querySelectorAll('img[alt]');
+                            if (resourceImages.length > 0) {
+                                const resource = resourceImages[0].alt.toLowerCase();
+                                console.log(`[MONOPOLY] CONFIRMED: ${playerName} stole ${amount} ${resource}`);
+
+                                // Mark the second entry as processed immediately to avoid double counting
+                                const nextDataIndex = nextEntry.getAttribute('data-index');
+                                const nextContentHash = nextText.substring(0, 50) + nextDataIndex + (nextMessageSpan.innerHTML.length || 0);
+                                window.gameState.processedEntries.add(nextContentHash);
+                                console.log(`[MONOPOLY] Marked followup steal message as processed: ${nextContentHash}`);
+                                
+                                window.gameState.addPlayer(playerName);
+                                window.gameState.addAction({
+                                    type: 'monopoly',
+                                    player: playerName,
+                                    resource: resource,
+                                    amount: amount,
+                                });
+                                return true;
+                            }
+                        }
+                    }
+                }
             }
-            return false;
         } catch (error) {
-            console.error("Error parsing card usage:", error);
+            console.error("Error parsing Monopoly action:", error);
+        }
         return false;
-    }
-}
+     }
 
     function parseStealAction(entry, messageSpan) {
         try {
@@ -1826,6 +1873,41 @@
             return false;
         }
     }
+
+    function parseCardUsageAction(entry, messageSpan) {
+        try {
+            const text = messageSpan.textContent;
+            console.log(`[CARD] Checking text: "${text}"`);
+            
+            if (text.includes('used') && text.includes('Road Building')) {
+                console.log(`[CARD] Found Road Building card usage`);
+                
+                const playerSpan = messageSpan.querySelector('span[style*="color"]');
+                if (playerSpan) {
+                    const playerName = playerSpan.textContent.trim();
+                    console.log(`[CARD] Player: ${playerName} used Road Building`);
+                    
+                    // Track that this player gets 2 free roads
+                    window.gameState.activeCardEffects[playerName] = {
+                        type: 'road_building',
+                        freeRoads: 2
+                    };
+                    
+                    console.log(`[CARD] ROAD BUILDING ACTIVATED: ${playerName} gets 2 free roads`);
+                    window.gameState.addPlayer(playerName);
+            return true;
+        } else {
+                    console.log(`[CARD] No player span found in card usage`);
+        }
+    } else {
+                console.log(`[CARD] Not a card usage message`);
+            }
+            return false;
+        } catch (error) {
+            console.error("Error parsing card usage:", error);
+        return false;
+    }
+}
 
     function parseRobberAction(entry, messageSpan) {
         try {
