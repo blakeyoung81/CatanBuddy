@@ -1,8 +1,8 @@
 (() => {
     "use strict";
     
-        console.log("Colonist Card Counter extension loaded");
-        console.log("Version 1.3.5 - Added turn order tracking, table sorted by second settlement placement order");
+    console.log("Colonist Card Counter extension loaded");
+        console.log("Version 1.3.6 - Improved player detection using DOM elements, cleaner current player logic");
     
     // Advanced game state tracking system
     window.gameState = {
@@ -208,62 +208,44 @@
                 return this.currentPlayer;
             }
             
-            // Try to find current player from various UI indicators
-            let detectedPlayer = null;
-            
-            // Method 1: Look for player name in recent "You" messages by finding who got resources most recently
-            const recentYouActions = this.confirmedActions.slice(-10).filter(action => 
-                action.type === 'got_resource' || action.type === 'spent_resources'
-            );
-            
-            if (recentYouActions.length > 0) {
-                // Get the most recent player who took an action
-                const playerCounts = {};
-                recentYouActions.forEach(action => {
-                    if (action.player && action.player !== "You") {
-                        playerCounts[action.player] = (playerCounts[action.player] || 0) + 1;
-                    }
-                });
-                
-                let mostActivePlayer = null;
-                let maxCount = 0;
-                for (const [player, count] of Object.entries(playerCounts)) {
-                    if (count > maxCount) {
-                        maxCount = count;
-                        mostActivePlayer = player;
-                    }
-                }
-                detectedPlayer = mostActivePlayer;
+            // Method 1: Try to get username from the header profile element (most reliable)
+            const headerUsernameElement = document.getElementById('header_profile_username');
+            if (headerUsernameElement && headerUsernameElement.textContent.trim()) {
+                this.currentPlayer = headerUsernameElement.textContent.trim();
+                console.log(`[PLAYER] Found current player from header: ${this.currentPlayer}`);
+                return this.currentPlayer;
             }
             
-            // Method 2: Try to find it from the players object if we only have one player tracked extensively
-            if (!detectedPlayer) {
-                const playerNames = Object.keys(this.players);
-                if (playerNames.length > 0) {
-                    // For now, assume the first player we've tracked is likely the current player
-                    // This is not ideal but better than "UnknownPlayer"
-                    detectedPlayer = playerNames[0];
-                    console.log(`[PLAYER] Guessing current player from tracked players: ${detectedPlayer}`);
+            // Method 2: Alternative selector for the header username
+            const headerUsernameElement2 = document.querySelector('.header_profile_username');
+            if (headerUsernameElement2 && headerUsernameElement2.textContent.trim()) {
+                this.currentPlayer = headerUsernameElement2.textContent.trim();
+                console.log(`[PLAYER] Found current player from header (alt selector): ${this.currentPlayer}`);
+                return this.currentPlayer;
+            }
+            
+            // Method 3: Look for username in any profile-related elements
+            const profileElements = document.querySelectorAll('[class*="username"], [class*="profile"], [id*="username"], [id*="profile"]');
+            for (const element of profileElements) {
+                const text = element.textContent.trim();
+                if (text && text.length > 0 && text.length < 50 && !text.includes(' ')) {
+                    this.currentPlayer = text;
+                    console.log(`[PLAYER] Found current player from profile element: ${this.currentPlayer}`);
+                    return this.currentPlayer;
                 }
             }
             
-            // Method 3: If we still don't have a player, use a hardcoded fallback for BlakeYoung
-            if (!detectedPlayer) {
-                // Look for BlakeYoung specifically since that's mentioned in the user query
-                const blakeYoung = Object.keys(this.players).find(name => name.includes('BlakeYoung'));
-                if (blakeYoung) {
-                    detectedPlayer = blakeYoung;
-                    console.log(`[PLAYER] Found BlakeYoung in players: ${detectedPlayer}`);
-                }
+            // Fallback: Try to find BlakeYoung in tracked players (legacy support)
+            const blakeYoung = Object.keys(this.players).find(name => name.includes('BlakeYoung'));
+            if (blakeYoung) {
+                this.currentPlayer = blakeYoung;
+                console.log(`[PLAYER] Using tracked BlakeYoung as fallback: ${this.currentPlayer}`);
+                return this.currentPlayer;
             }
             
-            if (detectedPlayer) {
-                this.currentPlayer = detectedPlayer;
-                console.log(`[PLAYER] Determined current player: ${detectedPlayer}`);
-            } else {
-                this.currentPlayer = "BlakeYoung"; // Fallback based on user info
-                console.log(`[PLAYER] Using fallback current player: BlakeYoung`);
-            }
+            // Ultimate fallback
+            this.currentPlayer = "BlakeYoung";
+            console.log(`[PLAYER] Using hardcoded fallback: ${this.currentPlayer}`);
             
             return this.currentPlayer;
         },
@@ -348,6 +330,17 @@
             const finalOrder = [...orderedPlayers, ...remainingPlayers];
             console.log(`[TURN_ORDER] Final player order for table:`, finalOrder);
             return finalOrder;
+        },
+        
+        // Initialize and cache the current player early
+        initializeCurrentPlayer: function() {
+            console.log(`[PLAYER] Initializing current player detection...`);
+            const detectedPlayer = this.getCurrentPlayer();
+            if (detectedPlayer) {
+                console.log(`[PLAYER] Successfully initialized current player: ${detectedPlayer}`);
+            } else {
+                console.log(`[PLAYER] Failed to detect current player during initialization`);
+            }
         },
         
         // Advanced state management methods
@@ -442,32 +435,32 @@
                         tradeState[action.partner] = { lumber: 0, brick: 0, wool: 0, grain: 0, ore: 0 };
                     }
                     
-                    // Check if BOTH players have the resources they're giving away
-                    // Trader must have what they're giving, Partner must have what trader is receiving
+                        // Check if BOTH players have the resources they're giving away
+                        // Trader must have what they're giving, Partner must have what trader is receiving
                     const traderHasResource = tradeState[action.trader][action.traderGave] > 0;
                     const partnerHasResource = tradeState[action.partner][action.traderReceived] > 0;
-                    
+                        
                     console.log(`[STATE] Before trade - ${action.trader}:`, tradeState[action.trader]);
                     console.log(`[STATE] Before trade - ${action.partner}:`, tradeState[action.partner]);
-                    console.log(`[STATE] Trader has ${action.traderGave}? ${traderHasResource}, Partner has ${action.traderReceived}? ${partnerHasResource}`);
-                    
-                    if (traderHasResource && partnerHasResource) {
-                        // Trader: loses what they gave, gains what they received
+                        console.log(`[STATE] Trader has ${action.traderGave}? ${traderHasResource}, Partner has ${action.traderReceived}? ${partnerHasResource}`);
+                        
+                        if (traderHasResource && partnerHasResource) {
+                            // Trader: loses what they gave, gains what they received
                         tradeState[action.trader][action.traderGave] -= 1;
                         tradeState[action.trader][action.traderReceived] += 1;
-                        
-                        // Partner: loses what they gave (what trader received), gains what they received (what trader gave)
+                            
+                            // Partner: loses what they gave (what trader received), gains what they received (what trader gave)
                         tradeState[action.partner][action.traderReceived] -= 1;
                         tradeState[action.partner][action.traderGave] += 1;
-                        
-                        console.log(`[STATE] TRADE PROCESSED: ${action.trader} (${action.traderGave} → ${action.traderReceived}), ${action.partner} (${action.traderReceived} → ${action.traderGave})`);
+                            
+                            console.log(`[STATE] TRADE PROCESSED: ${action.trader} (${action.traderGave} → ${action.traderReceived}), ${action.partner} (${action.traderReceived} → ${action.traderGave})`);
                         console.log(`[STATE] After trade - ${action.trader}:`, tradeState[action.trader]);
                         console.log(`[STATE] After trade - ${action.partner}:`, tradeState[action.partner]);
                         newStates.push(tradeState);
-                    } else {
-                        console.log(`[STATE] TRADE ELIMINATED STATE - ${action.trader} has ${action.traderGave}? ${traderHasResource}, ${action.partner} has ${action.traderReceived}? ${partnerHasResource}`);
-                        // This state is eliminated because the trade is impossible
-                    }
+        } else {
+                            console.log(`[STATE] TRADE ELIMINATED STATE - ${action.trader} has ${action.traderGave}? ${traderHasResource}, ${action.partner} has ${action.traderReceived}? ${partnerHasResource}`);
+                            // This state is eliminated because the trade is impossible
+                        }
                     break;
                     
                 case 'traded_complex':
@@ -528,7 +521,7 @@
                         console.log(`[STATE] After complex trade - ${action.trader}:`, complexTradeState[action.trader]);
                         console.log(`[STATE] After complex trade - ${action.partner}:`, complexTradeState[action.partner]);
                         newStates.push(complexTradeState);
-                    } else {
+        } else {
                         console.log(`[STATE] COMPLEX TRADE ELIMINATED STATE - trader can afford? ${traderCanAfford}, partner can afford? ${partnerCanAfford}`);
                         // This state is eliminated because the trade is impossible
                     }
@@ -544,35 +537,35 @@
                         bankNewState[action.player] = { lumber: 0, brick: 0, wool: 0, grain: 0, ore: 0 };
                     }
                     
-                    // Check if player has all the resources they're giving to bank
-                    let canAfford = true;
-                    for (const [resource, amount] of Object.entries(action.gave)) {
-                        if (bankNewState[action.player][resource] < amount) {
-                            canAfford = false;
-                            break;
-                        }
-                    }
-                    
-                    console.log(`[STATE] Player can afford bank trade? ${canAfford}`);
-                    
-                    if (canAfford) {
-                        // Remove resources given to bank
+                        // Check if player has all the resources they're giving to bank
+                        let canAfford = true;
                         for (const [resource, amount] of Object.entries(action.gave)) {
+                        if (bankNewState[action.player][resource] < amount) {
+                                canAfford = false;
+                                break;
+                            }
+                        }
+                        
+                        console.log(`[STATE] Player can afford bank trade? ${canAfford}`);
+                        
+                        if (canAfford) {
+                            // Remove resources given to bank
+                            for (const [resource, amount] of Object.entries(action.gave)) {
                             bankNewState[action.player][resource] -= amount;
-                        }
-                        
-                        // Add resources received from bank
-                        for (const [resource, amount] of Object.entries(action.received)) {
+                            }
+                            
+                            // Add resources received from bank
+                            for (const [resource, amount] of Object.entries(action.received)) {
                             bankNewState[action.player][resource] += amount;
-                        }
-                        
-                        console.log(`[STATE] BANK TRADE PROCESSED: ${action.player}`);
+                            }
+                            
+                            console.log(`[STATE] BANK TRADE PROCESSED: ${action.player}`);
                         console.log(`[STATE] Before bank trade:`, state[action.player] || 'null');
                         console.log(`[STATE] After bank trade:`, bankNewState[action.player]);
                         newStates.push(bankNewState);
-                    } else {
-                        console.log(`[STATE] BANK TRADE ELIMINATED STATE - player cannot afford trade`);
-                        // This state is eliminated because the player can't afford the trade
+                        } else {
+                            console.log(`[STATE] BANK TRADE ELIMINATED STATE - player cannot afford trade`);
+                            // This state is eliminated because the player can't afford the trade
                     }
                     break;
                     
@@ -589,26 +582,26 @@
                         robberyState[action.robber] = { lumber: 0, brick: 0, wool: 0, grain: 0, ore: 0 };
                     }
                     
-                    const possibleResources = ['lumber', 'brick', 'wool', 'grain', 'ore']
+                        const possibleResources = ['lumber', 'brick', 'wool', 'grain', 'ore']
                         .filter(res => robberyState[action.victim][res] > 0);
-                    
-                    console.log(`[STATE] Victim ${action.victim} can lose:`, possibleResources);
+                        
+                        console.log(`[STATE] Victim ${action.victim} can lose:`, possibleResources);
                     console.log(`[STATE] Before robbery - ${action.victim}:`, robberyState[action.victim]);
                     console.log(`[STATE] Before robbery - ${action.robber}:`, robberyState[action.robber]);
-                    
-                    if (possibleResources.length > 0) {
-                        for (const resource of possibleResources) {
+                        
+                        if (possibleResources.length > 0) {
+                            for (const resource of possibleResources) {
                             const stealState = JSON.parse(JSON.stringify(robberyState));
                             stealState[action.victim][resource] -= 1;
                             stealState[action.robber][resource] += 1;
-                            console.log(`[STATE] Created robbery state: ${action.victim} lost ${resource}, ${action.robber} gained ${resource}`);
+                                console.log(`[STATE] Created robbery state: ${action.victim} lost ${resource}, ${action.robber} gained ${resource}`);
                             console.log(`[STATE] After robbery - ${action.victim}:`, stealState[action.victim]);
                             console.log(`[STATE] After robbery - ${action.robber}:`, stealState[action.robber]);
                             newStates.push(stealState);
-                        }
-                    } else {
-                        console.log(`[STATE] ROBBERY ELIMINATED STATE - victim has no resources to steal`);
-                        // If victim has no resources, this state is impossible
+                            }
+                        } else {
+                            console.log(`[STATE] ROBBERY ELIMINATED STATE - victim has no resources to steal`);
+                            // If victim has no resources, this state is impossible
                     }
                     break;
                     
@@ -628,13 +621,13 @@
                     if (specificRobberyState[action.victim][action.resource] > 0) {
                         specificRobberyState[action.victim][action.resource] -= 1;
                         specificRobberyState[action.robber][action.resource] += 1;
-                        console.log(`[STATE] SPECIFIC ROBBERY PROCESSED`);
+                            console.log(`[STATE] SPECIFIC ROBBERY PROCESSED`);
                         console.log(`[STATE] After robbery - ${action.victim}:`, specificRobberyState[action.victim]);
                         console.log(`[STATE] After robbery - ${action.robber}:`, specificRobberyState[action.robber]);
                         newStates.push(specificRobberyState);
-                    } else {
-                        console.log(`[STATE] SPECIFIC ROBBERY ELIMINATED STATE - victim doesn't have ${action.resource}`);
-                        // This state is eliminated because victim doesn't have the specific resource
+                        } else {
+                            console.log(`[STATE] SPECIFIC ROBBERY ELIMINATED STATE - victim doesn't have ${action.resource}`);
+                            // This state is eliminated because victim doesn't have the specific resource
                     }
                     break;
                     
@@ -765,7 +758,7 @@
             // Create rows for each player in turn order
             for (const playerName of finalPlayerOrder) {
                 if (allPlayers.has(playerName)) {
-                    this.addPlayerToResourceTable(tbody, playerName);
+                this.addPlayerToResourceTable(tbody, playerName);
                 }
             }
         },
@@ -1446,21 +1439,21 @@
                         });
                         
                         console.log(`[TRADE] VALID TRADE: ${trader} gave`, traderGaveCounts, `and received`, traderReceivedCounts, `from ${partner}`);
-                        
-                        // Make sure both players exist in game state
-                        window.gameState.addPlayer(trader);
-                        window.gameState.addPlayer(partner);
-                        
-                        // Process the trade
-                        window.gameState.addAction({
+                            
+                            // Make sure both players exist in game state
+                            window.gameState.addPlayer(trader);
+                            window.gameState.addPlayer(partner);
+                            
+                            // Process the trade
+                            window.gameState.addAction({
                             type: 'traded_complex',
-                            trader: trader,
-                            partner: partner,
+                                trader: trader,
+                                partner: partner,
                             traderGave: traderGaveCounts,
                             traderReceived: traderReceivedCounts
-                        });
-                        
-                        return true;
+                            });
+                            
+                            return true;
                     } else {
                         console.log(`[TRADE] Not enough resource images found (need 2, got ${resourceImages.length})`);
                     }
@@ -1732,7 +1725,7 @@
                                     resource: stolenResource
                                 });
                                 
-                                return true;
+            return true;
         }
     } else {
                             console.log(`[STEAL] You stole message but no resource images found`);
@@ -1991,7 +1984,7 @@
                             reason: `bought ${itemBought}`
                         });
                         
-                        return true;
+                    return true;
                     } else {
                         console.log(`[BUY] Could not determine what was bought or cost`);
                     }
@@ -2000,10 +1993,10 @@
                 }
             } else {
                 console.log(`[BUY] No 'bought' keyword found`);
-            }
-            
-            return false;
-        } catch (error) {
+                }
+                
+                return false;
+    } catch (error) {
             console.error("Error parsing buy action:", error);
             return false;
         }
@@ -2126,6 +2119,11 @@
             window.gameState.players = {};
             console.log("Reset game state for reinitialization");
         }
+        
+        // Initialize current player detection (with slight delay to ensure DOM is loaded)
+        setTimeout(() => {
+            window.gameState.initializeCurrentPlayer();
+        }, 500);
         
         // Load table positions
         const positions = loadTablePositions();
