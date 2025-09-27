@@ -2,7 +2,7 @@
     "use strict";
     
     console.log("Colonist Card Counter extension loaded");
-    console.log("Version 1.4.11 - Enhanced game log container detection with robust fallback methods");
+    console.log("Version 1.4.12 - Fixed phantom player creation from incomplete bank trade parsing");
     
     // Advanced game state tracking system
     window.gameState = {
@@ -271,6 +271,9 @@
                 
                 // Clean up any "you" player that might have been incorrectly added
                 this.cleanupYouPlayer();
+                
+                // Also clean up any invalid players
+                this.cleanupInvalidPlayers();
             }
         },
         
@@ -319,6 +322,38 @@
                 });
                 
                 console.log(`[PLAYER] Cleaned up 'you' references in all game states`);
+            }
+        },
+
+        // Function to clean up invalid player entries (like partial names)
+        cleanupInvalidPlayers: function() {
+            const playersToRemove = [];
+            
+            for (const playerName in this.players) {
+                // Remove players that are just numbers (like "8805")
+                if (/^\d+$/.test(playerName)) {
+                    console.log(`[CLEANUP] Found invalid player name: "${playerName}", marking for removal`);
+                    playersToRemove.push(playerName);
+                }
+            }
+            
+            // Remove invalid players
+            for (const playerName of playersToRemove) {
+                console.log(`[CLEANUP] Removing invalid player: "${playerName}"`);
+                delete this.players[playerName];
+                
+                // Also remove from possible states
+                this.possibleStates.forEach(state => {
+                    if (state[playerName]) {
+                        delete state[playerName];
+                    }
+                });
+            }
+            
+            if (playersToRemove.length > 0) {
+                console.log(`[CLEANUP] Cleaned up ${playersToRemove.length} invalid players, remaining:`, Object.keys(this.players));
+                // Update the resource display after cleanup
+                this.updateResourceDisplay();
             }
         },
         
@@ -392,6 +427,9 @@
             } else {
                 console.log(`[USER] Failed to detect extension user during initialization`);
             }
+            
+            // Clean up any invalid players that might exist
+            this.cleanupInvalidPlayers();
         },
         
         
@@ -1684,10 +1722,17 @@
             if (text.includes('gave bank') && text.includes('and took')) {
                 console.log(`[BANK] Found bank trade pattern`);
                 
-                const bankTradeMatch = text.match(/(\w+)\s+gave bank\s+.*?\s+and took\s+/);
-                if (bankTradeMatch) {
-                    const player = bankTradeMatch[1];
+                // Extract player name from colored span instead of regex
+                const playerSpan = messageSpan.querySelector('span[style*="color"]');
+                if (playerSpan) {
+                    const player = playerSpan.textContent.trim();
                     console.log(`[BANK] Player: ${player}`);
+                    
+                    // Validate player name - it should not be empty or just numbers
+                    if (!player || /^\d+$/.test(player)) {
+                        console.log(`[BANK] Invalid player name: "${player}", skipping`);
+                        return null;
+                    }
                     
                     // Extract all resource images
                     const resourceImages = messageSpan.querySelectorAll('img[alt*="Lumber"], img[alt*="Brick"], img[alt*="Wool"], img[alt*="Grain"], img[alt*="Ore"]');
