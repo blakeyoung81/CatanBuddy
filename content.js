@@ -2,7 +2,7 @@
     "use strict";
     
         console.log("Colonist Card Counter extension loaded");
-        console.log("Version 1.3.3 - Enhanced 1v1 support, improved parsing");
+        console.log("Version 1.3.4 - Fixed 'you' player resolution, improved current player detection");
     
     // Advanced game state tracking system
     window.gameState = {
@@ -113,6 +113,12 @@
         
         // Add a player to the game state
         addPlayer: function(playerName, playerColor = '#ffffff') {
+            // Never add "you" as a literal player - resolve it first
+            if (playerName && playerName.toLowerCase() === 'you') {
+                console.log(`[PLAYER] Resolving 'you' to current player before adding`);
+                playerName = this.getCurrentPlayer();
+            }
+            
             console.log(`Adding player: ${playerName} with color: ${playerColor}`);
             if (!this.players[playerName]) {
                 this.players[playerName] = {
@@ -266,6 +272,57 @@
             if (playerName && playerName !== "You") {
                 this.currentPlayer = playerName;
                 console.log(`[PLAYER] Current player set to: ${playerName}`);
+                
+                // Clean up any "you" player that might have been incorrectly added
+                this.cleanupYouPlayer();
+            }
+        },
+        
+        // Clean up any "you" player that was incorrectly added and merge their resources
+        cleanupYouPlayer: function() {
+            if (this.players['you'] || this.players['You']) {
+                const currentPlayer = this.getCurrentPlayer();
+                console.log(`[PLAYER] Cleaning up 'you' player, merging to: ${currentPlayer}`);
+                
+                // Merge resources from "you" to the actual current player
+                ['you', 'You'].forEach(youKey => {
+                    if (this.players[youKey]) {
+                        const youPlayer = this.players[youKey];
+                        if (!this.players[currentPlayer]) {
+                            this.addPlayer(currentPlayer);
+                        }
+                        
+                        // Merge resources
+                        for (const [resource, amount] of Object.entries(youPlayer.resources)) {
+                            this.players[currentPlayer].resources[resource] += amount;
+                        }
+                        
+                        // Remove the "you" player
+                        delete this.players[youKey];
+                        console.log(`[PLAYER] Merged and removed '${youKey}' player`);
+                    }
+                });
+                
+                // Also update all possible states to replace "you" with current player
+                this.possibleStates.forEach(state => {
+                    ['you', 'You'].forEach(youKey => {
+                        if (state[youKey]) {
+                            if (!state[currentPlayer]) {
+                                state[currentPlayer] = { lumber: 0, brick: 0, wool: 0, grain: 0, ore: 0 };
+                            }
+                            
+                            // Merge resources in this state
+                            for (const [resource, amount] of Object.entries(state[youKey])) {
+                                state[currentPlayer][resource] += amount;
+                            }
+                            
+                            // Remove "you" from this state
+                            delete state[youKey];
+                        }
+                    });
+                });
+                
+                console.log(`[PLAYER] Cleaned up 'you' references in all game states`);
             }
         },
         
@@ -1653,7 +1710,14 @@
                     const stealMatch = text.match(/(\w+)\s+stole\s+.*?\s+from\s+(\w+)/);
                     if (stealMatch) {
                         const robber = stealMatch[1];
-                        const victim = stealMatch[2];
+                        let victim = stealMatch[2];
+                        
+                        // Resolve "you" to the actual current player
+                        if (victim.toLowerCase() === 'you') {
+                            victim = window.gameState.getCurrentPlayer();
+                            console.log(`[STEAL] Resolved 'you' to current player: ${victim}`);
+                        }
+                        
                         console.log(`[STEAL] Third-person steal - Robber: ${robber}, Victim: ${victim}`);
                         
                         // Check if it's a resource card back (unknown resource)
