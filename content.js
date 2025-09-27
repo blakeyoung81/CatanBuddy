@@ -2,7 +2,7 @@
     "use strict";
     
     console.log("Colonist Card Counter extension loaded");
-    console.log("Version 1.4.16 - Player-specific seven statistics: individual roll tracking and personalized seven risk probabilities");
+    console.log("Version 1.4.17 - Development card probability tracking: shows draw chances based on played cards and remaining deck");
     
     // Advanced game state tracking system
     window.gameState = {
@@ -14,6 +14,25 @@
         confirmedActions: [], // Confirmed actions from the log
         sevenCounts: {}, // Track number of sevens each player has rolled
         playerRollCounts: {}, // Track total rolls per player
+        
+        // Development card tracking
+        devCardsPurchased: 0, // Total development cards purchased
+        devCardsPlayed: { // Track which development cards have been played
+            knight: 0,
+            victory_point: 0,
+            road_building: 0,
+            year_of_plenty: 0,
+            monopoly: 0
+        },
+        
+        // Standard Catan development card distribution
+        devCardDistribution: {
+            knight: 14,
+            victory_point: 5,  
+            road_building: 2,
+            year_of_plenty: 2,
+            monopoly: 2
+        },
         
         // Initialize dice counts and state tracking
         init: function() {
@@ -93,6 +112,9 @@
                 
                 // Update turn order table
                 this.updateTurnOrderTable();
+                
+                // Update development card table
+                this.updateDevCardTable();
             } catch (error) {
                 console.error("Error updating dice table:", error);
             }
@@ -150,6 +172,47 @@
             }
             
             return probabilities;
+        },
+
+        // Function to calculate development card probabilities
+        calculateDevCardProbabilities: function() {
+            const totalCards = Object.values(this.devCardDistribution).reduce((a, b) => a + b, 0);
+            const totalPlayedCards = Object.values(this.devCardsPlayed).reduce((a, b) => a + b, 0);
+            const remainingInDeck = totalCards - this.devCardsPurchased;
+            
+            const probabilities = {};
+            
+            // Calculate remaining cards and probabilities for each type
+            for (const [cardType, totalAvailable] of Object.entries(this.devCardDistribution)) {
+                const played = this.devCardsPlayed[cardType] || 0;
+                const purchased = this.devCardsPurchased; // We don't know which specific cards were purchased
+                
+                // We can't know exactly which cards remain since we don't know what was purchased
+                // But we can calculate the probability assuming random distribution
+                const maxRemaining = totalAvailable - played;
+                const minRemaining = Math.max(0, totalAvailable - played - (this.devCardsPurchased - totalPlayedCards));
+                
+                // Use expected value calculation
+                const expectedRemaining = maxRemaining * (remainingInDeck / totalCards);
+                
+                probabilities[cardType] = {
+                    totalAvailable: totalAvailable,
+                    played: played,
+                    maxRemaining: maxRemaining,
+                    minRemaining: minRemaining,
+                    expectedRemaining: Math.max(0, expectedRemaining),
+                    probability: remainingInDeck > 0 ? (expectedRemaining / remainingInDeck) : 0,
+                    percentage: remainingInDeck > 0 ? ((expectedRemaining / remainingInDeck) * 100).toFixed(1) : '0.0'
+                };
+            }
+            
+            return {
+                probabilities: probabilities,
+                totalCards: totalCards,
+                purchased: this.devCardsPurchased,
+                played: totalPlayedCards,
+                remainingInDeck: remainingInDeck
+            };
         },
 
         // Function to update the turn order table
@@ -262,6 +325,98 @@
                 });
             } catch (error) {
                 console.error("Error updating turn order table:", error);
+            }
+        },
+
+        // Function to update the development card table
+        updateDevCardTable: function() {
+            try {
+                const devCardTbody = document.getElementById('dev-card-tbody');
+                if (!devCardTbody) {
+                    return; // Table not created yet
+                }
+                
+                // Clear existing rows
+                devCardTbody.innerHTML = '';
+                
+                const devCardData = this.calculateDevCardProbabilities();
+                const cardNames = {
+                    knight: 'Knight',
+                    victory_point: 'Victory Point',
+                    road_building: 'Road Building',
+                    year_of_plenty: 'Year of Plenty',
+                    monopoly: 'Monopoly'
+                };
+                
+                // Create rows for each card type
+                for (const [cardType, data] of Object.entries(devCardData.probabilities)) {
+                    const row = document.createElement('tr');
+                    
+                    // Card type name
+                    const nameCell = document.createElement('td');
+                    nameCell.style.cssText = 'padding: 3px 6px; font-weight: bold;';
+                    nameCell.textContent = cardNames[cardType];
+                    row.appendChild(nameCell);
+                    
+                    // Draw probability percentage
+                    const probCell = document.createElement('td');
+                    probCell.style.cssText = 'padding: 3px 6px; text-align: center;';
+                    probCell.textContent = `${data.percentage}%`;
+                    
+                    // Color code based on probability
+                    if (data.probability > 0.25) {
+                        probCell.style.color = '#90EE90'; // Green - high chance
+                    } else if (data.probability > 0.15) {
+                        probCell.style.color = '#FFD700'; // Gold - moderate chance
+                    } else if (data.probability > 0.05) {
+                        probCell.style.color = '#FF6B6B'; // Red - low chance
+                    } else {
+                        probCell.style.color = '#888888'; // Gray - very low/none
+                    }
+                    row.appendChild(probCell);
+                    
+                    // Cards played
+                    const playedCell = document.createElement('td');
+                    playedCell.style.cssText = 'padding: 3px 6px; text-align: center;';
+                    playedCell.textContent = data.played.toString();
+                    if (data.played > 0) {
+                        playedCell.style.color = '#FF6B6B'; // Red for played cards
+                        playedCell.style.fontWeight = 'bold';
+                    }
+                    row.appendChild(playedCell);
+                    
+                    // Estimated cards left
+                    const leftCell = document.createElement('td');
+                    leftCell.style.cssText = 'padding: 3px 6px; text-align: center;';
+                    const estimatedLeft = Math.max(0, Math.round(data.expectedRemaining));
+                    leftCell.textContent = estimatedLeft.toString();
+                    
+                    // Color based on remaining cards
+                    if (estimatedLeft === 0) {
+                        leftCell.style.color = '#888888'; // Gray - none left
+                    } else if (estimatedLeft <= 2) {
+                        leftCell.style.color = '#FF6B6B'; // Red - few left
+                    } else {
+                        leftCell.style.color = '#ffffff'; // White - normal
+                    }
+                    row.appendChild(leftCell);
+                    
+                    devCardTbody.appendChild(row);
+                }
+                
+                // Add summary row
+                const summaryRow = document.createElement('tr');
+                summaryRow.style.borderTop = '1px solid #666';
+                summaryRow.innerHTML = `
+                    <td style="padding: 3px 6px; font-weight: bold;">Total</td>
+                    <td style="padding: 3px 6px; text-align: center;">-</td>
+                    <td style="padding: 3px 6px; text-align: center; font-weight: bold;">${devCardData.played}</td>
+                    <td style="padding: 3px 6px; text-align: center; font-weight: bold;">${devCardData.remainingInDeck}</td>
+                `;
+                devCardTbody.appendChild(summaryRow);
+                
+            } catch (error) {
+                console.error("Error updating development card table:", error);
             }
         },
         
@@ -1343,8 +1498,31 @@
             turnTbody.id = 'turn-order-tbody';
             table.appendChild(turnTbody);
             
-            // Update turn order data
+            // Add development card section header
+            const devCardHeader = document.createElement('thead');
+            devCardHeader.innerHTML = `
+                <tr>
+                    <th colspan="4" style="text-align: center; padding: 5px; border-top: 2px solid #666; border-bottom: 1px solid #666;">
+                        Development Card Probabilities
+                    </th>
+                </tr>
+                <tr style="border-bottom: 1px solid #666;">
+                    <th style="padding: 3px 6px;">Card Type</th>
+                    <th style="padding: 3px 6px;">Draw %</th>
+                    <th style="padding: 3px 6px;">Played</th>
+                    <th style="padding: 3px 6px;">Left</th>
+                </tr>
+            `;
+            table.appendChild(devCardHeader);
+            
+            // Add development card tracking rows
+            const devCardTbody = document.createElement('tbody');
+            devCardTbody.id = 'dev-card-tbody';
+            table.appendChild(devCardTbody);
+            
+            // Update all data
             window.gameState.updateTurnOrderTable();
+            window.gameState.updateDevCardTable();
             
             container.appendChild(table);
             
@@ -2243,6 +2421,11 @@
                         resource: resource,
                         amount: amount,
                     });
+                    
+                    // Track that a Monopoly card was played
+                    window.gameState.devCardsPlayed.monopoly++;
+                    console.log(`[DEV_CARD] Monopoly card played by ${playerName}. Total played: ${window.gameState.devCardsPlayed.monopoly}`);
+                    
                     return true; // Action was handled
                 }
             }
@@ -2414,6 +2597,11 @@
                     
                     console.log(`[CARD] ROAD BUILDING ACTIVATED: ${playerName} gets 2 free roads`);
                     window.gameState.addPlayer(playerName);
+                    
+                    // Track that a Road Building card was played
+                    window.gameState.devCardsPlayed.road_building++;
+                    console.log(`[DEV_CARD] Road Building card played. Total played: ${window.gameState.devCardsPlayed.road_building}`);
+                    
                     return true;
                 } else {
                     console.log(`[CARD] No player span found in card usage`);
@@ -2434,6 +2622,11 @@
                     
                     console.log(`[CARD] YEAR OF PLENTY ACTIVATED: ${playerName} can take 2 resources from bank`);
                     window.gameState.addPlayer(playerName);
+                    
+                    // Track that a Year of Plenty card was played
+                    window.gameState.devCardsPlayed.year_of_plenty++;
+                    console.log(`[DEV_CARD] Year of Plenty card played. Total played: ${window.gameState.devCardsPlayed.year_of_plenty}`);
+                    
                     return true;
                 } else {
                     console.log(`[CARD] No player span found in card usage`);
@@ -2455,6 +2648,11 @@
                     
                     console.log(`[CARD] ROAD BUILDING ACTIVATED: ${playerName} gets 2 free roads`);
                     window.gameState.addPlayer(playerName);
+                    
+                    // Track that a Road Building card was played (fallback detection)
+                    window.gameState.devCardsPlayed.road_building++;
+                    console.log(`[DEV_CARD] Road Building card played (fallback). Total played: ${window.gameState.devCardsPlayed.road_building}`);
+                    
                     return true;
                 }
             } else if (text.includes('used') && text.includes('Year of Plenty')) {
@@ -2474,6 +2672,11 @@
                     
                     console.log(`[CARD] YEAR OF PLENTY ACTIVATED: ${playerName} can take 2 resources from bank`);
                     window.gameState.addPlayer(playerName);
+                    
+                    // Track that a Year of Plenty card was played (fallback detection)
+                    window.gameState.devCardsPlayed.year_of_plenty++;
+                    console.log(`[DEV_CARD] Year of Plenty card played (fallback). Total played: ${window.gameState.devCardsPlayed.year_of_plenty}`);
+                    
                     return true;
                 }
             } else {
@@ -2496,6 +2699,23 @@
                 if (playerSpan) {
                     const playerName = playerSpan.textContent.trim();
                     console.log(`${playerName} moved the robber`);
+                    
+                    // Check if this was due to a Knight card (not a rolled 7)
+                    // If the last dice roll wasn't a 7, this is likely a Knight card
+                    const recentDiceRoll = window.gameState.diceCounts[7] > 0; // Simple heuristic
+                    
+                    // For now, we'll assume Knight cards are used when robber is moved
+                    // A more sophisticated approach would track the sequence of events
+                    const isLikelyKnightCard = !text.toLowerCase().includes('seven') && 
+                                               !text.toLowerCase().includes('7') &&
+                                               !text.toLowerCase().includes('rolled');
+                    
+                    if (isLikelyKnightCard) {
+                        // Track that a Knight card was played
+                        window.gameState.devCardsPlayed.knight++;
+                        console.log(`[DEV_CARD] Knight card played by ${playerName}. Total played: ${window.gameState.devCardsPlayed.knight}`);
+                    }
+                    
                     return true;
                 }
                 }
@@ -2694,6 +2914,12 @@
                         
                         // Make sure player exists with their color
                         window.gameState.addPlayer(playerName, playerColor);
+                        
+                        // Track development card purchases
+                        if (itemBought === 'Development Card') {
+                            window.gameState.devCardsPurchased++;
+                            console.log(`[DEV_CARD] ${playerName} purchased development card. Total purchased: ${window.gameState.devCardsPurchased}`);
+                        }
                         
                         const action = {
                             type: 'spent_resources',
