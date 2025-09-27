@@ -2,7 +2,7 @@
     "use strict";
     
     console.log("Colonist Card Counter extension loaded");
-    console.log("Version 1.4.12 - Fixed phantom player creation from incomplete bank trade parsing");
+    console.log("Version 1.4.13 - Enhanced player name color coding in resource table");
     
     // Advanced game state tracking system
     window.gameState = {
@@ -962,15 +962,22 @@
         addPlayerToResourceTableSimple: function(tbody, playerName) {
             const row = document.createElement('tr');
             const player = this.players[playerName];
-            if (player && player.color) {
-                row.style.color = player.color;
-            }
             
-            // Player name cell
+            // Player name cell with color coding
             const nameCell = document.createElement('td');
             nameCell.textContent = playerName;
             nameCell.style.fontWeight = 'bold';
             nameCell.style.padding = '4px 8px';
+            
+            // Apply player's game color to their name
+            if (player && player.color && player.color !== '#ffffff') {
+                nameCell.style.color = player.color;
+                console.log(`[TABLE] Applied color ${player.color} to player ${playerName}`);
+            } else {
+                // Default white color for unrecognized or default colors
+                nameCell.style.color = '#ffffff';
+            }
+            
             row.appendChild(nameCell);
             
             // Resource cells with exact values
@@ -1006,15 +1013,22 @@
         addPlayerToResourceTable: function(tbody, playerName) {
             const row = document.createElement('tr');
             const player = this.players[playerName];
-            if (player && player.color) {
-                row.style.color = player.color;
-            }
             
-            // Player name cell
+            // Player name cell with color coding
             const nameCell = document.createElement('td');
             nameCell.textContent = playerName;
             nameCell.style.fontWeight = 'bold';
             nameCell.style.padding = '4px 8px';
+            
+            // Apply player's game color to their name
+            if (player && player.color && player.color !== '#ffffff') {
+                nameCell.style.color = player.color;
+                console.log(`[TABLE] Applied color ${player.color} to player ${playerName}`);
+            } else {
+                // Default white color for unrecognized or default colors
+                nameCell.style.color = '#ffffff';
+            }
+            
             row.appendChild(nameCell);
             
             // Resource cells with range display
@@ -1726,7 +1740,8 @@
                 const playerSpan = messageSpan.querySelector('span[style*="color"]');
                 if (playerSpan) {
                     const player = playerSpan.textContent.trim();
-                    console.log(`[BANK] Player: ${player}`);
+                    const playerColor = playerSpan.style.color || '#ffffff';
+                    console.log(`[BANK] Player: ${player}, Color: ${playerColor}`);
                     
                     // Validate player name - it should not be empty or just numbers
                     if (!player || /^\d+$/.test(player)) {
@@ -1784,8 +1799,8 @@
                             if (Object.keys(gaveResources).length > 0 && Object.keys(receivedResources).length > 0) {
                                 console.log(`[BANK] VALID BANK TRADE: ${player} traded with bank`);
                                 
-                                // Make sure player exists
-                                window.gameState.addPlayer(player);
+                                // Make sure player exists with their color
+                                window.gameState.addPlayer(player, playerColor);
                                 
                                 // Process the bank trade
                                 window.gameState.addAction({
@@ -1880,7 +1895,8 @@
                 const playerSpan = messageSpan.querySelector('span[style*="color"]');
                 if (playerSpan) {
                     const playerName = playerSpan.textContent.trim();
-                    console.log(`[DISCARD] Player: ${playerName}`);
+                    const playerColor = playerSpan.style.color || '#ffffff';
+                    console.log(`[DISCARD] Player: ${playerName}, Color: ${playerColor}`);
                     
                     // Extract resource images
                     const resourceImages = messageSpan.querySelectorAll('img[alt*="Lumber"], img[alt*="Brick"], img[alt*="Wool"], img[alt*="Grain"], img[alt*="Ore"]');
@@ -1910,8 +1926,8 @@
                         if (Object.keys(discardedResources).length > 0) {
                             console.log(`[DISCARD] VALID DISCARD: ${playerName} discarded resources`);
                             
-                            // Make sure player exists
-                            window.gameState.addPlayer(playerName);
+                            // Make sure player exists with their color
+                            window.gameState.addPlayer(playerName, playerColor);
                             
                             // Process the discard as spending resources
                             window.gameState.addAction({
@@ -2238,11 +2254,12 @@
                 const playerSpan = messageSpan.querySelector('span[style*="color"]');
                 if (playerSpan) {
                     const playerName = playerSpan.textContent.trim();
-                    console.log(`[BUILD] Player: ${playerName}`);
+                    const playerColor = playerSpan.style.color || '#ffffff';
+                    console.log(`[BUILD] Player: ${playerName}, Color: ${playerColor}`);
                     
                     // Player is actively building, so they're likely the current player
                     window.gameState.setCurrentPlayer(playerName);
-                    window.gameState.addPlayer(playerName); // Ensure player exists
+                    window.gameState.addPlayer(playerName, playerColor); // Ensure player exists
                     
                     // Determine what was built/placed and the cost
                     let cost = {};
@@ -2305,13 +2322,13 @@
                                     console.log(`[BUILD] Road Building effect expired for ${playerName}`);
                                 }
                                 
-                                window.gameState.addPlayer(playerName);
+                                window.gameState.addPlayer(playerName, playerColor);
                                 return true;
                             } else {
                                 console.log(`[BUILD] MAIN GAME: ${playerName} built ${actionType} - deducting cost:`, cost);
                                 
                                 // Make sure player exists in game state
-                                window.gameState.addPlayer(playerName);
+                                window.gameState.addPlayer(playerName, playerColor);
                                 
                                 window.gameState.addAction({
                                     type: 'spent_resources',
@@ -2352,7 +2369,8 @@
                 const playerSpan = messageSpan.querySelector('span[style*="color"]');
                 if (playerSpan) {
                     const playerName = playerSpan.textContent.trim();
-                    console.log(`[BUY] Player: ${playerName}`);
+                    const playerColor = playerSpan.style.color || '#ffffff';
+                    console.log(`[BUY] Player: ${playerName}, Color: ${playerColor}`);
                     window.gameState.setCurrentPlayer(playerName);
 
                     // Check for duplicate detection with shorter time window
@@ -2409,8 +2427,8 @@
                     if (Object.keys(cost).length > 0) {
                         console.log(`[BUY] ${playerName} bought ${itemBought}, deducting cost:`, cost);
                         
-                        // Make sure player exists
-                        window.gameState.addPlayer(playerName);
+                        // Make sure player exists with their color
+                        window.gameState.addPlayer(playerName, playerColor);
                         
                         const action = {
                             type: 'spent_resources',
