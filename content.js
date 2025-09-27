@@ -2,7 +2,7 @@
     "use strict";
     
     console.log("Colonist Card Counter extension loaded");
-    console.log("Version 1.4.9 - Implemented clockwise player arrangement from extension user perspective");
+    console.log("Version 1.4.10 - Enhanced 1v1 mode debugging and fixed player color persistence");
     
     // Advanced game state tracking system
     window.gameState = {
@@ -119,8 +119,8 @@
                 playerName = this.getExtensionUser();
             }
             
-            console.log(`Adding player: ${playerName} with color: ${playerColor}`);
             if (!this.players[playerName]) {
+                console.log(`Adding new player: ${playerName} with color: ${playerColor}`);
                 this.players[playerName] = {
                     name: playerName,
                     color: playerColor,
@@ -143,6 +143,12 @@
                 const resourceTable = document.getElementById('resource-table');
                 if (resourceTable && resourceTable.querySelector('tbody')) {
                     this.addPlayerToResourceTable(resourceTable.querySelector('tbody'), playerName);
+                }
+            } else {
+                // Player exists - preserve original color if new color is default
+                if (playerColor !== '#ffffff' && this.players[playerName].color !== playerColor) {
+                    console.log(`Updating ${playerName} color from ${this.players[playerName].color} to ${playerColor}`);
+                    this.players[playerName].color = playerColor;
                 }
             }
             return this.players[playerName];
@@ -478,8 +484,15 @@
                         spentState[action.player] = { lumber: 0, brick: 0, wool: 0, grain: 0, ore: 0 };
                     }
                     
+                    console.log(`[1V1-DEBUG] ${action.player} trying to spend:`, action.cost);
+                    console.log(`[1V1-DEBUG] ${action.player} current resources in state:`, spentState[action.player]);
+                    console.log(`[1V1-DEBUG] All players in current state:`, Object.keys(spentState));
+                    
                     // Only keep states where player has enough resources
-                    if (this.playerCanAfford(spentState[action.player], action.cost)) {
+                    const canAffordSpending = this.playerCanAfford(spentState[action.player], action.cost);
+                    console.log(`[1V1-DEBUG] Can ${action.player} afford ${JSON.stringify(action.cost)}? ${canAffordSpending}`);
+                    
+                    if (canAffordSpending) {
                         for (const [resource, amount] of Object.entries(action.cost)) {
                             spentState[action.player][resource] -= amount;
                             // Ensure we don't go negative
@@ -488,9 +501,9 @@
                             }
                         }
                         newStates.push(spentState);
-                        console.log(`State after ${action.player} spent resources:`, spentState[action.player]);
+                        console.log(`[1V1-DEBUG] State after ${action.player} spent resources:`, spentState[action.player]);
                     } else {
-                        console.log(`${action.player} cannot afford ${JSON.stringify(action.cost)} in state:`, spentState[action.player]);
+                        console.log(`[1V1-ERROR] ${action.player} cannot afford ${JSON.stringify(action.cost)} in state:`, spentState[action.player]);
                         // If player can't afford it, this state is eliminated
                     }
                     break;
@@ -611,17 +624,17 @@
                     }
                     
                         // Check if player has all the resources they're giving to bank
-                        let canAfford = true;
+                        let canAffordBankTrade = true;
                         for (const [resource, amount] of Object.entries(action.gave)) {
                         if (bankNewState[action.player][resource] < amount) {
-                                canAfford = false;
+                                canAffordBankTrade = false;
                                 break;
                             }
                         }
                         
-                        console.log(`[STATE] Player can afford bank trade? ${canAfford}`);
+                        console.log(`[STATE] Player can afford bank trade? ${canAffordBankTrade}`);
                         
-                        if (canAfford) {
+                        if (canAffordBankTrade) {
                             // Remove resources given to bank
                             for (const [resource, amount] of Object.entries(action.gave)) {
                             bankNewState[action.player][resource] -= amount;
@@ -680,7 +693,7 @@
                     
                 case 'robbed_specific':
                     // Handle specific resource robbery (rare but possible)
-                    console.log(`[STATE] Processing specific resource steal: ${action.robber} stole ${action.resource} from ${action.victim}`);
+                    console.log(`[1V1-DEBUG] Processing specific resource steal: ${action.robber} stole ${action.resource} from ${action.victim}`);
                     
                     // Ensure both players exist in state
                     const specificRobberyState = JSON.parse(JSON.stringify(state));
@@ -691,15 +704,20 @@
                         specificRobberyState[action.robber] = { lumber: 0, brick: 0, wool: 0, grain: 0, ore: 0 };
                     }
                     
+                    console.log(`[1V1-DEBUG] Before steal - ${action.victim} resources:`, specificRobberyState[action.victim]);
+                    console.log(`[1V1-DEBUG] Before steal - ${action.robber} resources:`, specificRobberyState[action.robber]);
+                    console.log(`[1V1-DEBUG] Checking if ${action.victim} has ${action.resource}: ${specificRobberyState[action.victim][action.resource]}`);
+                    
                     if (specificRobberyState[action.victim][action.resource] > 0) {
                         specificRobberyState[action.victim][action.resource] -= 1;
                         specificRobberyState[action.robber][action.resource] += 1;
-                            console.log(`[STATE] SPECIFIC ROBBERY PROCESSED`);
-                        console.log(`[STATE] After robbery - ${action.victim}:`, specificRobberyState[action.victim]);
-                        console.log(`[STATE] After robbery - ${action.robber}:`, specificRobberyState[action.robber]);
+                        console.log(`[1V1-DEBUG] SPECIFIC ROBBERY PROCESSED SUCCESSFULLY`);
+                        console.log(`[1V1-DEBUG] After robbery - ${action.victim}:`, specificRobberyState[action.victim]);
+                        console.log(`[1V1-DEBUG] After robbery - ${action.robber}:`, specificRobberyState[action.robber]);
                         newStates.push(specificRobberyState);
                         } else {
-                            console.log(`[STATE] SPECIFIC ROBBERY ELIMINATED STATE - victim doesn't have ${action.resource}`);
+                            console.log(`[1V1-ERROR] SPECIFIC ROBBERY ELIMINATED STATE - ${action.victim} doesn't have ${action.resource}`);
+                            console.log(`[1V1-ERROR] Available resources for ${action.victim}:`, specificRobberyState[action.victim]);
                             // This state is eliminated because victim doesn't have the specific resource
                         }
                     break;
