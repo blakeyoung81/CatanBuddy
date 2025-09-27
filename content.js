@@ -2,7 +2,7 @@
     "use strict";
     
     console.log("Colonist Card Counter extension loaded");
-    console.log("Version 1.4.20 - Reorganized dice statistics table: separated 7s section, added discard risk calculation based on card counts");
+    console.log("Version 1.4.21 - Enhanced debugging: improved card counting accuracy checks, detailed player ordering logs, resource calculation validation");
     
     // Advanced game state tracking system
     window.gameState = {
@@ -710,11 +710,18 @@
             const allPlayers = Object.keys(this.players);
             const extensionUser = this.getExtensionUser();
             
+            console.log(`[TURN_ORDER] All players:`, allPlayers);
+            console.log(`[TURN_ORDER] Extension user:`, extensionUser);
+            console.log(`[TURN_ORDER] Current turn order:`, this.turnOrder);
+            
             // Players in turn order come first
             const orderedPlayers = this.turnOrder.filter(player => this.players[player]);
             
             // Add any remaining players that aren't in turn order yet
             const remainingPlayers = allPlayers.filter(player => !this.turnOrder.includes(player));
+            
+            console.log(`[TURN_ORDER] Ordered players:`, orderedPlayers);
+            console.log(`[TURN_ORDER] Remaining players:`, remainingPlayers);
             
             let finalOrder = [];
             
@@ -750,6 +757,8 @@
                     finalOrder = finalOrder.filter(p => p !== extensionUser);
                     finalOrder.push(extensionUser);
                 }
+                
+                console.log(`[TURN_ORDER] Using fallback ordering (user not in turn order yet)`);
             }
             
             console.log(`[TURN_ORDER] Final player order for table (user at bottom):`, finalOrder);
@@ -1197,7 +1206,10 @@
         },
         
         getResourceRange: function(player, resource) {
-            if (this.possibleStates.length === 0) return { min: 0, max: 0, certain: true, value: 0 };
+            if (this.possibleStates.length === 0) {
+                console.log(`[DEBUG] No possible states for resource range: ${player} ${resource}`);
+                return { min: 0, max: 0, certain: true, value: 0 };
+            }
             
             const values = this.possibleStates.map(state => 
                 state[player] ? (state[player][resource] || 0) : 0
@@ -1209,6 +1221,11 @@
             const min = Math.min(...numericValues);
             const max = Math.max(...numericValues);
             
+            // Debug logging for problematic cases
+            if (min !== max) {
+                console.log(`[DEBUG] Resource range for ${player} ${resource}: ${min}-${max} (from ${this.possibleStates.length} states)`);
+            }
+            
             return {
                 min: min,
                 max: max,
@@ -1218,16 +1235,23 @@
         },
         
         getExactTotalCards: function(player) {
-            if (this.possibleStates.length === 0) return 0;
+            if (this.possibleStates.length === 0) {
+                console.log(`[DEBUG] No possible states for ${player}, returning 0`);
+                return 0;
+            }
             
             // Get total cards from first state - should be identical across all states
             const firstState = this.possibleStates[0];
-            if (!firstState[player]) return 0;
+            if (!firstState[player]) {
+                console.log(`[DEBUG] Player ${player} not found in first state, returning 0`);
+                return 0;
+            }
             
             const total = ['lumber', 'brick', 'wool', 'grain', 'ore']
                 .reduce((sum, resource) => {
                     const value = firstState[player][resource];
-                    return sum + (typeof value === 'number' ? value : 0);
+                    const numericValue = typeof value === 'number' ? value : 0;
+                    return sum + numericValue;
                 }, 0);
             
             // Verify that all states have the same total (they should!)
@@ -1245,8 +1269,11 @@
             
             if (minTotal !== maxTotal) {
                 console.warn(`[WARNING] Total cards mismatch for ${player}: ${minTotal}-${maxTotal}. This should never happen!`);
+                console.log(`[DEBUG] All totals for ${player}:`, allTotals);
+                console.log(`[DEBUG] First state for ${player}:`, firstState[player]);
             }
             
+            console.log(`[DEBUG] Total cards for ${player}: ${total} (from ${this.possibleStates.length} states)`);
             return total;
         },
         
@@ -1352,6 +1379,8 @@
             const row = document.createElement('tr');
             const player = this.players[playerName];
             
+            console.log(`[TABLE] Adding player ${playerName} to resource table`);
+            
             // Player name cell with color coding
             const nameCell = document.createElement('td');
             nameCell.textContent = playerName;
@@ -1412,6 +1441,13 @@
             // Ensure total is always a number
             const displayTotal = exactTotal !== null && exactTotal !== undefined ? exactTotal : 0;
             totalCell.textContent = displayTotal.toString();
+            
+            console.log(`[TABLE] Player ${playerName} total cards: ${displayTotal} (calculated vs range: ${totalMin}-${totalMax})`);
+            
+            // Warn if calculated total doesn't match range total
+            if (displayTotal < totalMin || displayTotal > totalMax) {
+                console.warn(`[TABLE] WARNING: Total cards mismatch for ${playerName}! Calculated: ${displayTotal}, Range: ${totalMin}-${totalMax}`);
+            }
             
             row.appendChild(totalCell);
             
