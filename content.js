@@ -2,7 +2,7 @@
     "use strict";
     
     console.log("Colonist Card Counter extension loaded");
-    console.log("Version 1.4.18 - Fixed Monopoly and steal parsing for player names with special characters (1v1 compatibility)");
+    console.log("Version 1.4.19 - Fixed trade parsing for player names with special characters - complete fix for all parsers");
     
     // Advanced game state tracking system
     window.gameState = {
@@ -2065,10 +2065,11 @@
             if (text.includes('gave') && text.includes('and got') && text.includes('from')) {
                 console.log(`[TRADE] Found trade pattern in text`);
                 
-                const tradeMatch = text.match(/(\w+)\s+gave\s+.*?\s+and\s+got\s+.*?\s+from\s+(\w+)/);
-                if (tradeMatch) {
-                    const trader = tradeMatch[1]; // Person who initiated trade
-                    const partner = tradeMatch[2]; // Person they traded with
+                // Extract player names from colored spans (more reliable than regex)
+                const playerSpans = messageSpan.querySelectorAll('span[style*="color"]');
+                if (playerSpans.length >= 2) {
+                    const trader = playerSpans[0].textContent.trim(); // Person who initiated trade
+                    const partner = playerSpans[1].textContent.trim(); // Person they traded with
                     console.log(`[TRADE] Trader: ${trader}, Partner: ${partner}`);
                     
                     // Extract resources from images - should be exactly 2 for a simple trade
@@ -2139,9 +2140,13 @@
                         
                         console.log(`[TRADE] VALID TRADE: ${trader} gave`, traderGaveCounts, `and received`, traderReceivedCounts, `from ${partner}`);
                             
-                            // Make sure both players exist in game state
-                            window.gameState.addPlayer(trader);
-                            window.gameState.addPlayer(partner);
+                            // Extract player colors
+                            const traderColor = playerSpans[0].style.color || '#ffffff';
+                            const partnerColor = playerSpans[1].style.color || '#ffffff';
+                            
+                            // Make sure both players exist in game state with colors
+                            window.gameState.addPlayer(trader, traderColor);
+                            window.gameState.addPlayer(partner, partnerColor);
                             
                             // Process the trade
                             window.gameState.addAction({
