@@ -2,7 +2,7 @@
     "use strict";
     
     console.log("Colonist Card Counter extension loaded");
-    console.log("Version 1.4.13 - Enhanced player name color coding in resource table");
+    console.log("Version 1.4.14 - Added turn probability calculations and seven tracking statistics");
     
     // Advanced game state tracking system
     window.gameState = {
@@ -12,6 +12,7 @@
         players: {},
         possibleStates: [], // Array of all possible game states
         confirmedActions: [], // Confirmed actions from the log
+        sevenCounts: {}, // Track number of sevens each player has rolled
         
         // Initialize dice counts and state tracking
         init: function() {
@@ -88,6 +89,9 @@
                 if (totalCell) {
                     totalCell.textContent = this.totalRolls;
                 }
+                
+                // Update turn order table
+                this.updateTurnOrderTable();
             } catch (error) {
                 console.error("Error updating dice table:", error);
             }
@@ -109,6 +113,110 @@
                 12: 2.8
             };
             return expectedPercentages[sum] || 0;
+        },
+
+        // Function to calculate probability of reaching a player's turn without rolling a seven
+        calculateTurnProbabilities: function() {
+            const turnOrder = this.getPlayersSortedByTurnOrder();
+            const probabilities = {};
+            
+            // Probability of NOT rolling a 7 on a single roll is 30/36 = 5/6
+            const noSevenProb = 30/36;
+            
+            for (let i = 0; i < turnOrder.length; i++) {
+                const playerName = turnOrder[i];
+                // Each player needs (i+1) rolls to complete (all players before them + their own roll)
+                const rollsNeeded = i + 1;
+                // Probability is (5/6)^rollsNeeded
+                const probability = Math.pow(noSevenProb, rollsNeeded);
+                probabilities[playerName] = {
+                    probability: probability,
+                    percentage: (probability * 100).toFixed(1),
+                    rollsNeeded: rollsNeeded
+                };
+            }
+            
+            return probabilities;
+        },
+
+        // Function to update the turn order table
+        updateTurnOrderTable: function() {
+            try {
+                const turnTbody = document.getElementById('turn-order-tbody');
+                if (!turnTbody) {
+                    return; // Table not created yet
+                }
+                
+                // Clear existing rows
+                turnTbody.innerHTML = '';
+                
+                const turnOrder = this.getPlayersSortedByTurnOrder();
+                const probabilities = this.calculateTurnProbabilities();
+                
+                if (turnOrder.length === 0) {
+                    // No players yet
+                    const emptyRow = document.createElement('tr');
+                    emptyRow.innerHTML = `
+                        <td colspan="4" style="padding: 3px 6px; text-align: center; font-style: italic;">
+                            Waiting for players...
+                        </td>
+                    `;
+                    turnTbody.appendChild(emptyRow);
+                    return;
+                }
+                
+                turnOrder.forEach((playerName, index) => {
+                    const row = document.createElement('tr');
+                    const player = this.players[playerName];
+                    const playerColor = (player && player.color && player.color !== '#ffffff') ? player.color : '#ffffff';
+                    
+                    // Player name with color
+                    const nameCell = document.createElement('td');
+                    nameCell.style.cssText = `padding: 3px 6px; color: ${playerColor}; font-weight: bold;`;
+                    nameCell.textContent = playerName;
+                    row.appendChild(nameCell);
+                    
+                    // No seven probability
+                    const probCell = document.createElement('td');
+                    probCell.style.cssText = 'padding: 3px 6px; text-align: center;';
+                    const prob = probabilities[playerName];
+                    if (prob) {
+                        probCell.textContent = `${prob.percentage}%`;
+                        // Color code based on risk level
+                        if (prob.probability > 0.7) {
+                            probCell.style.color = '#90EE90'; // Light green - safe
+                        } else if (prob.probability > 0.4) {
+                            probCell.style.color = '#FFD700'; // Gold - moderate risk
+                        } else {
+                            probCell.style.color = '#FF6B6B'; // Red - high risk
+                        }
+                    } else {
+                        probCell.textContent = '-';
+                    }
+                    row.appendChild(probCell);
+                    
+                    // Seven count
+                    const sevenCell = document.createElement('td');
+                    sevenCell.style.cssText = 'padding: 3px 6px; text-align: center;';
+                    const sevenCount = this.sevenCounts[playerName] || 0;
+                    sevenCell.textContent = sevenCount.toString();
+                    if (sevenCount > 0) {
+                        sevenCell.style.color = '#FF6B6B'; // Red for sevens
+                        sevenCell.style.fontWeight = 'bold';
+                    }
+                    row.appendChild(sevenCell);
+                    
+                    // Turn order position
+                    const orderCell = document.createElement('td');
+                    orderCell.style.cssText = 'padding: 3px 6px; text-align: center;';
+                    orderCell.textContent = (index + 1).toString();
+                    row.appendChild(orderCell);
+                    
+                    turnTbody.appendChild(row);
+                });
+            } catch (error) {
+                console.error("Error updating turn order table:", error);
+            }
         },
         
         // Add a player to the game state
@@ -1140,6 +1248,23 @@
             `;
             table.appendChild(header);
             
+            // Add turn order probabilities section
+            const turnHeader = document.createElement('thead');
+            turnHeader.innerHTML = `
+                <tr>
+                    <th colspan="4" style="text-align: center; padding: 5px; border-top: 2px solid #666; border-bottom: 1px solid #666;">
+                        Turn Order & Seven Tracking
+                    </th>
+                </tr>
+                <tr style="border-bottom: 1px solid #666;">
+                    <th style="padding: 3px 6px;">Player</th>
+                    <th style="padding: 3px 6px;">No 7 %</th>
+                    <th style="padding: 3px 6px;">Sevens</th>
+                    <th style="padding: 3px 6px;">Order</th>
+                </tr>
+            `;
+            table.appendChild(turnHeader);
+            
             // Body
             const tbody = document.createElement('tbody');
             for (let i = 2; i <= 12; i++) {
@@ -1166,6 +1291,15 @@
             tbody.appendChild(totalRow);
             
             table.appendChild(tbody);
+            
+            // Add turn order and seven tracking rows
+            const turnTbody = document.createElement('tbody');
+            turnTbody.id = 'turn-order-tbody';
+            table.appendChild(turnTbody);
+            
+            // Update turn order data
+            window.gameState.updateTurnOrderTable();
+            
             container.appendChild(table);
             
             // Make draggable
@@ -1511,6 +1645,15 @@
                     // Add player and track dice roll
                     window.gameState.addPlayer(playerName, playerColor);
                     window.gameState.incrementDiceCount(sum);
+                    
+                    // Track sevens specifically
+                    if (sum === 7) {
+                        if (!window.gameState.sevenCounts[playerName]) {
+                            window.gameState.sevenCounts[playerName] = 0;
+                        }
+                        window.gameState.sevenCounts[playerName]++;
+                        console.log(`[SEVEN] ${playerName} rolled a seven! Total sevens: ${window.gameState.sevenCounts[playerName]}`);
+                    }
                     
                     // This player is actively rolling, so they're likely the current player
                     window.gameState.setCurrentPlayer(playerName);
