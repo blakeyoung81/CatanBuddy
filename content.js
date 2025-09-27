@@ -2,7 +2,7 @@
     "use strict";
     
     console.log("Colonist Card Counter extension loaded");
-    console.log("Version 1.4.19 - Fixed trade parsing for player names with special characters - complete fix for all parsers");
+    console.log("Version 1.4.20 - Reorganized dice statistics table: separated 7s section, added discard risk calculation based on card counts");
     
     // Advanced game state tracking system
     window.gameState = {
@@ -69,6 +69,8 @@
                 
                 // Update counts
                 for (let i = 2; i <= 12; i++) {
+                    if (i === 7) continue; // Skip 7s - they're tracked separately in Player Seven Statistics
+                    
                     const countCell = document.getElementById(`count-${i}`);
                     if (countCell) {
                         countCell.textContent = this.diceCounts[i];
@@ -149,6 +151,9 @@
                 const playerRolls = this.playerRollCounts[playerName] || 0;
                 const playerSevens = this.sevenCounts[playerName] || 0;
                 
+                // Calculate total cards for this player
+                const playerTotalCards = this.getExactTotalCards(playerName);
+                
                 let sevenProbability;
                 let probabilityType;
                 
@@ -162,9 +167,31 @@
                     probabilityType = 'theoretical';
                 }
                 
+                // Calculate discard risk: probability of rolling 7 * risk level based on cards
+                let discardRisk = 0;
+                let riskDescription = 'Safe';
+                
+                if (playerTotalCards >= 8) {
+                    // High risk - will definitely discard if 7 is rolled
+                    discardRisk = sevenProbability * 100; // Full probability
+                    riskDescription = 'High Risk';
+                } else if (playerTotalCards >= 6) {
+                    // Moderate risk - close to discard threshold
+                    discardRisk = sevenProbability * 50; // Half probability as warning
+                    riskDescription = 'Moderate Risk';
+                } else {
+                    // Low/no risk
+                    discardRisk = 0;
+                    riskDescription = 'Safe';
+                }
+                
                 probabilities[playerName] = {
                     probability: sevenProbability,
                     percentage: (sevenProbability * 100).toFixed(1),
+                    discardRisk: discardRisk,
+                    discardRiskPercentage: discardRisk.toFixed(1),
+                    riskDescription: riskDescription,
+                    totalCards: playerTotalCards,
                     totalRolls: playerRolls,
                     totalSevens: playerSevens,
                     type: probabilityType
@@ -256,27 +283,29 @@
                     nameCell.textContent = playerName;
                     row.appendChild(nameCell);
                     
-                    // Seven risk probability (likelihood they'll roll a 7 next)
+                    // Discard risk percentage (likelihood they'll have to discard if 7 is rolled)
                     const riskCell = document.createElement('td');
                     riskCell.style.cssText = 'padding: 3px 6px; text-align: center;';
                     const prob = probabilities[playerName];
                     if (prob) {
-                        riskCell.textContent = `${prob.percentage}%`;
-                        // Color code based on seven risk level
-                        if (prob.probability > 0.20) {
-                            riskCell.style.color = '#FF6B6B'; // Red - high seven risk
-                        } else if (prob.probability > 0.16) {
-                            riskCell.style.color = '#FFD700'; // Gold - normal risk
+                        riskCell.textContent = `${prob.discardRiskPercentage}%`;
+                        // Color code based on discard risk level
+                        if (prob.totalCards >= 8) {
+                            riskCell.style.color = '#FF6B6B'; // Red - high discard risk (8+ cards)
+                        } else if (prob.totalCards >= 6) {
+                            riskCell.style.color = '#FFD700'; // Gold - moderate discard risk (6-7 cards)
                         } else {
-                            riskCell.style.color = '#90EE90'; // Green - low seven risk
+                            riskCell.style.color = '#90EE90'; // Green - safe (0-5 cards)
                         }
                         // Add indicator for historical vs theoretical
                         if (prob.type === 'theoretical') {
                             riskCell.style.fontStyle = 'italic';
                         }
+                        // Add tooltip showing card count
+                        riskCell.title = `${prob.totalCards} cards - ${prob.riskDescription}`;
                     } else {
-                        riskCell.textContent = '16.7%'; // Theoretical default
-                        riskCell.style.color = '#FFD700';
+                        riskCell.textContent = '0.0%'; // No data available
+                        riskCell.style.color = '#90EE90';
                         riskCell.style.fontStyle = 'italic';
                     }
                     row.appendChild(riskCell);
@@ -1437,7 +1466,7 @@
             header.innerHTML = `
                 <tr>
                     <th colspan="4" style="text-align: center; padding: 5px; border-bottom: 1px solid #666;">
-                        Dice Statistics
+                        Dice Statistics (Excluding 7s)
                     </th>
                 </tr>
                 <tr style="border-bottom: 1px solid #666;">
@@ -1449,26 +1478,11 @@
             `;
             table.appendChild(header);
             
-            // Add turn order probabilities section
-            const turnHeader = document.createElement('thead');
-            turnHeader.innerHTML = `
-                <tr>
-                    <th colspan="4" style="text-align: center; padding: 5px; border-top: 2px solid #666; border-bottom: 1px solid #666;">
-                        Player Seven Statistics
-                    </th>
-                </tr>
-                <tr style="border-bottom: 1px solid #666;">
-                    <th style="padding: 3px 6px;">Player</th>
-                    <th style="padding: 3px 6px;">7 Risk %</th>
-                    <th style="padding: 3px 6px;">7s/Rolls</th>
-                    <th style="padding: 3px 6px;">Avg %</th>
-                </tr>
-            `;
-            table.appendChild(turnHeader);
-            
             // Body
             const tbody = document.createElement('tbody');
             for (let i = 2; i <= 12; i++) {
+                if (i === 7) continue; // Skip 7s - they have their own section below
+                
                 const row = document.createElement('tr');
                 const expected = window.gameState.getDiceExpectedPercentage(i);
                 
@@ -1492,6 +1506,23 @@
             tbody.appendChild(totalRow);
             
             table.appendChild(tbody);
+            
+            // Add Player Seven Statistics section
+            const sevenHeader = document.createElement('thead');
+            sevenHeader.innerHTML = `
+                <tr>
+                    <th colspan="4" style="text-align: center; padding: 5px; border-top: 2px solid #666; border-bottom: 1px solid #666;">
+                        Player Seven Statistics
+                    </th>
+                </tr>
+                <tr style="border-bottom: 1px solid #666;">
+                    <th style="padding: 3px 6px;">Player</th>
+                    <th style="padding: 3px 6px;">Discard Risk %</th>
+                    <th style="padding: 3px 6px;">7s/Rolls</th>
+                    <th style="padding: 3px 6px;">Historical %</th>
+                </tr>
+            `;
+            table.appendChild(sevenHeader);
             
             // Add turn order and seven tracking rows
             const turnTbody = document.createElement('tbody');
