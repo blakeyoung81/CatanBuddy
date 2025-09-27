@@ -2,7 +2,7 @@
     "use strict";
     
     console.log("Colonist Card Counter extension loaded");
-    console.log("Version 1.4.6 - Enhanced Road Building card detection and logging");
+    console.log("Version 1.4.7 - Added Year of Plenty card support and bank resource tracking");
     
     // Advanced game state tracking system
     window.gameState = {
@@ -714,6 +714,24 @@
                     
                     break;
                     
+                case 'year_of_plenty':
+                    console.log(`[STATE] Processing Year of Plenty: ${action.player} took from bank:`, action.resources);
+                    const yearOfPlentyState = JSON.parse(JSON.stringify(state));
+                    
+                    if (!yearOfPlentyState[action.player]) {
+                        yearOfPlentyState[action.player] = { lumber: 0, brick: 0, wool: 0, grain: 0, ore: 0 };
+                    }
+                    
+                    // Add the free resources from Year of Plenty
+                    Object.keys(action.resources).forEach(resource => {
+                        const amount = action.resources[resource];
+                        yearOfPlentyState[action.player][resource] += amount;
+                        console.log(`[STATE] YEAR OF PLENTY: ${action.player} +${amount} ${resource}`);
+                    });
+                    
+                    newStates.push(yearOfPlentyState);
+                    break;
+                    
                 default:
                     newStates.push(state);
             }
@@ -1317,6 +1335,7 @@
                 parseResourceGainAction,
                 parseTradeAction,
                 parseBankTradeAction,
+                parseBankTakeAction, // Year of Plenty card effect
                 parseDiscardAction,
                 parseMonopolyAction, // Monopoly should be checked before generic steal/card usage
                 parseStealAction,
@@ -1677,6 +1696,57 @@
         }
     }
     
+    function parseBankTakeAction(entry, messageSpan) {
+        try {
+            const text = messageSpan.textContent;
+            console.log(`[BANK-TAKE] Checking text: "${text}"`);
+            
+            if (text.includes('took from bank')) {
+                const playerSpan = messageSpan.querySelector('span[style*="color"]');
+                if (playerSpan) {
+                    const playerName = playerSpan.textContent.trim();
+                    
+                    // Parse the resources taken from bank (Year of Plenty effect)
+                    const resourceImages = messageSpan.querySelectorAll('img[alt="Lumber"], img[alt="Brick"], img[alt="Wool"], img[alt="Grain"], img[alt="Ore"]');
+                    const resources = {};
+                    
+                    resourceImages.forEach(img => {
+                        const resourceType = img.alt.toLowerCase();
+                        resources[resourceType] = (resources[resourceType] || 0) + 1;
+                    });
+                    
+                    console.log(`[BANK-TAKE] ${playerName} took from bank:`, resources);
+                    
+                    // Add resources to player (Year of Plenty effect)
+                    const action = {
+                        type: 'year_of_plenty',
+                        player: playerName,
+                        resources: resources
+                    };
+                    
+                    window.gameState.addAction(action);
+                    
+                    // Clear the Year of Plenty effect since it's been used
+                    if (window.gameState.activeCardEffects[playerName] && 
+                        window.gameState.activeCardEffects[playerName].type === 'year_of_plenty') {
+                        delete window.gameState.activeCardEffects[playerName];
+                        console.log(`[BANK-TAKE] Year of Plenty effect completed for ${playerName}`);
+                    }
+                    
+                    return true;
+                } else {
+                    console.log(`[BANK-TAKE] No player span found in bank take action`);
+                }
+            } else {
+                console.log(`[BANK-TAKE] Not a bank take message`);
+            }
+            return false;
+        } catch (error) {
+            console.error("Error parsing bank take action:", error);
+            return false;
+        }
+    }
+    
     function parseDiscardAction(entry, messageSpan) {
         try {
             const text = messageSpan.textContent;
@@ -1924,6 +1994,8 @@
             
             // Check for Road Building card - look for the specific image
             const roadBuildingImage = entry.querySelector('img[alt="Road Building"], img[src*="roadbuilding"]');
+            const yearOfPlentyImage = entry.querySelector('img[alt="Year of Plenty"], img[src*="yearofplenty"]');
+            
             if (text.includes('used') && roadBuildingImage) {
                 console.log(`[CARD] Found Road Building card usage`);
                 
@@ -1944,8 +2016,28 @@
                 } else {
                     console.log(`[CARD] No player span found in card usage`);
                 }
+            } else if (text.includes('used') && yearOfPlentyImage) {
+                console.log(`[CARD] Found Year of Plenty card usage`);
+                
+                const playerSpan = messageSpan.querySelector('span[style*="color"]');
+                if (playerSpan) {
+                    const playerName = playerSpan.textContent.trim();
+                    console.log(`[CARD] Player: ${playerName} used Year of Plenty`);
+                    
+                    // Track that this player used Year of Plenty (for logging purposes)
+                    window.gameState.activeCardEffects[playerName] = {
+                        type: 'year_of_plenty',
+                        used: true
+                    };
+                    
+                    console.log(`[CARD] YEAR OF PLENTY ACTIVATED: ${playerName} can take 2 resources from bank`);
+                    window.gameState.addPlayer(playerName);
+                    return true;
+                } else {
+                    console.log(`[CARD] No player span found in card usage`);
+                }
             } else if (text.includes('used') && text.includes('Road Building')) {
-                // Fallback: try text-based detection
+                // Fallback: try text-based detection for Road Building
                 console.log(`[CARD] Found Road Building card usage (text-based)`);
                 
                 const playerSpan = messageSpan.querySelector('span[style*="color"]');
@@ -1960,6 +2052,25 @@
                     };
                     
                     console.log(`[CARD] ROAD BUILDING ACTIVATED: ${playerName} gets 2 free roads`);
+                    window.gameState.addPlayer(playerName);
+                    return true;
+                }
+            } else if (text.includes('used') && text.includes('Year of Plenty')) {
+                // Fallback: try text-based detection for Year of Plenty
+                console.log(`[CARD] Found Year of Plenty card usage (text-based)`);
+                
+                const playerSpan = messageSpan.querySelector('span[style*="color"]');
+                if (playerSpan) {
+                    const playerName = playerSpan.textContent.trim();
+                    console.log(`[CARD] Player: ${playerName} used Year of Plenty`);
+                    
+                    // Track that this player used Year of Plenty
+                    window.gameState.activeCardEffects[playerName] = {
+                        type: 'year_of_plenty',
+                        used: true
+                    };
+                    
+                    console.log(`[CARD] YEAR OF PLENTY ACTIVATED: ${playerName} can take 2 resources from bank`);
                     window.gameState.addPlayer(playerName);
                     return true;
                 }
