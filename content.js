@@ -2,7 +2,7 @@
     "use strict";
     
     console.log("Colonist Card Counter extension loaded");
-    console.log("Version 1.4.5 - Fixed resource table display and initial placement tracking");
+    console.log("Version 1.4.6 - Enhanced Road Building card detection and logging");
     
     // Advanced game state tracking system
     window.gameState = {
@@ -1922,7 +1922,9 @@
             const text = messageSpan.textContent;
             console.log(`[CARD] Checking text: "${text}"`);
             
-            if (text.includes('used') && text.includes('Road Building')) {
+            // Check for Road Building card - look for the specific image
+            const roadBuildingImage = entry.querySelector('img[alt="Road Building"], img[src*="roadbuilding"]');
+            if (text.includes('used') && roadBuildingImage) {
                 console.log(`[CARD] Found Road Building card usage`);
                 
                 const playerSpan = messageSpan.querySelector('span[style*="color"]');
@@ -1938,11 +1940,30 @@
                     
                     console.log(`[CARD] ROAD BUILDING ACTIVATED: ${playerName} gets 2 free roads`);
                     window.gameState.addPlayer(playerName);
-            return true;
-        } else {
+                    return true;
+                } else {
                     console.log(`[CARD] No player span found in card usage`);
-        }
-    } else {
+                }
+            } else if (text.includes('used') && text.includes('Road Building')) {
+                // Fallback: try text-based detection
+                console.log(`[CARD] Found Road Building card usage (text-based)`);
+                
+                const playerSpan = messageSpan.querySelector('span[style*="color"]');
+                if (playerSpan) {
+                    const playerName = playerSpan.textContent.trim();
+                    console.log(`[CARD] Player: ${playerName} used Road Building`);
+                    
+                    // Track that this player gets 2 free roads
+                    window.gameState.activeCardEffects[playerName] = {
+                        type: 'road_building',
+                        freeRoads: 2
+                    };
+                    
+                    console.log(`[CARD] ROAD BUILDING ACTIVATED: ${playerName} gets 2 free roads`);
+                    window.gameState.addPlayer(playerName);
+                    return true;
+                }
+            } else {
                 console.log(`[CARD] Not a card usage message`);
             }
             return false;
@@ -2040,8 +2061,10 @@
                         } else {
                             // Check for active card effects (like Road Building)
                             const cardEffect = window.gameState.activeCardEffects[playerName];
+                            console.log(`[BUILD] Checking for card effects for ${playerName}:`, cardEffect);
+                            
                             if (cardEffect && cardEffect.type === 'road_building' && actionType === 'Road' && cardEffect.freeRoads > 0) {
-                                console.log(`[BUILD] FREE ROAD FROM CARD: ${playerName} placed ${actionType} (Road Building card - ${cardEffect.freeRoads} free roads left)`);
+                                console.log(`[BUILD] FREE ROAD FROM ROAD BUILDING CARD: ${playerName} placed ${actionType} (${cardEffect.freeRoads} free roads remaining)`);
                                 cardEffect.freeRoads--;
                                 
                                 // Remove effect when no free roads left
