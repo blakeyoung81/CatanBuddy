@@ -2,7 +2,7 @@
     "use strict";
     
     console.log("Colonist Card Counter extension loaded");
-    console.log("Version 1.4.10 - Enhanced development card purchase detection and resource deduction");
+    console.log("Version 1.4.11 - Enhanced game log container detection with robust fallback methods");
     
     // Advanced game state tracking system
     window.gameState = {
@@ -1249,38 +1249,76 @@
         try {
             console.log("Searching for game feeds container...");
             
-            // Look for the specific game feeds container structure
+            // Debug: log what's available in the DOM
+            const allScrollers = document.querySelectorAll('[class*="virtualScroller"], [class*="Scroller"]');
+            const feedMessages = document.querySelectorAll('.feedMessage-O8TLknGe');
+            console.log(`[DEBUG] Found ${allScrollers.length} scrollers and ${feedMessages.length} feed messages`);
+            
+            // Method 1: Look for the specific game feeds container structure
             const gameFeedsContainer = document.querySelector('.gameFeedsContainer-jBSxvDCV');
             if (gameFeedsContainer) {
-                console.log("Found gameFeedsContainer-jBSxvDCV");
+                console.log("✅ Found gameFeedsContainer-jBSxvDCV");
                 const virtualScroller = gameFeedsContainer.querySelector('.virtualScroller-lSkdkGJi');
                 if (virtualScroller) {
-                    console.log("Found virtualScroller within game feeds container");
+                    console.log("✅ Found virtualScroller within game feeds container");
                     return virtualScroller;
                 }
             }
             
-            // Fallback: look for virtualScroller directly
+            // Method 2: Look for virtualScroller directly
             const virtualScroller = document.querySelector('.virtualScroller-lSkdkGJi');
             if (virtualScroller) {
-                console.log("Found virtualScroller directly");
+                console.log("✅ Found virtualScroller directly");
                 return virtualScroller;
             }
             
-            // Look for the container that has feedMessage elements
-            const feedMessages = document.querySelectorAll('.feedMessage-O8TLknGe');
-            if (feedMessages.length > 0) {
-                let parent = feedMessages[0].parentElement;
-                while (parent && !parent.classList.contains('virtualScroller-lSkdkGJi')) {
-                    parent = parent.parentElement;
-                }
-                if (parent) {
-                    console.log("Found container by tracing up from feedMessage");
-                    return parent;
+            // Method 3: Look for any virtualScroller variant
+            const anyVirtualScroller = document.querySelector('[class*="virtualScroller"]');
+            if (anyVirtualScroller) {
+                console.log(`✅ Found alternative virtualScroller: ${anyVirtualScroller.className}`);
+                return anyVirtualScroller;
+            }
+            
+            // Method 4: Look for any scroller with feedMessages
+            if (allScrollers.length > 0) {
+                for (const scroller of allScrollers) {
+                    const messagesInScroller = scroller.querySelectorAll('.feedMessage-O8TLknGe');
+                    if (messagesInScroller.length > 0) {
+                        console.log(`✅ Found scroller with ${messagesInScroller.length} messages: ${scroller.className}`);
+                        return scroller;
+                    }
                 }
             }
             
-            console.log("No game log container found");
+            // Method 5: Trace up from feedMessage elements
+            if (feedMessages.length > 0) {
+                console.log(`[DEBUG] Tracing up from ${feedMessages.length} feed messages...`);
+                let parent = feedMessages[0].parentElement;
+                let depth = 0;
+                while (parent && depth < 10) {
+                    console.log(`[DEBUG] Parent ${depth}: ${parent.className || 'no-class'}`);
+                    if (parent.classList.contains('virtualScroller-lSkdkGJi') || 
+                        parent.className.includes('virtualScroller') ||
+                        parent.className.includes('Scroller')) {
+                        console.log("✅ Found container by tracing up from feedMessage");
+                        return parent;
+                    }
+                    parent = parent.parentElement;
+                    depth++;
+                }
+            }
+            
+            // Method 6: Look for any element containing multiple feedMessages
+            const containers = document.querySelectorAll('div');
+            for (const container of containers) {
+                const messagesInContainer = container.querySelectorAll('.feedMessage-O8TLknGe');
+                if (messagesInContainer.length >= 3) { // Arbitrary threshold
+                    console.log(`✅ Found container with ${messagesInContainer.length} messages: ${container.className}`);
+                    return container;
+                }
+            }
+            
+            console.log("❌ No game log container found with any method");
             return null;
                                 } catch (error) {
             console.error("Error finding game log container:", error);
@@ -2340,7 +2378,7 @@
                         window.gameState.addAction(action);
                         console.log(`[BUY] ✅ Successfully processed ${itemBought} purchase for ${playerName}`);
                         
-                        return true;
+                    return true;
                     } else {
                         console.log(`[BUY] ❌ Could not determine what was bought or cost`);
                         console.log(`[BUY] Full HTML content:`, messageSpan.innerHTML);
@@ -2350,10 +2388,10 @@
                 }
             } else {
                 console.log(`[BUY] No 'bought' keyword found`);
-            }
-            
-            return false;
-        } catch (error) {
+                }
+                
+                return false;
+    } catch (error) {
             console.error("Error parsing buy action:", error);
             return false;
         }
@@ -2491,22 +2529,77 @@
         
         // Setup observer
         if (!setupObserver()) {
-            // If observer setup failed, retry periodically
+            // If observer setup failed, retry periodically with better debugging
+            let retryCount = 0;
+            const maxRetries = 10;
+            
             const retryInterval = setInterval(() => {
-                console.log("Retrying observer setup...");
+                retryCount++;
+                console.log(`Retrying observer setup... (attempt ${retryCount}/${maxRetries})`);
+                
+                // Try to find container again
+                const retryContainer = findGameLogContainer();
+                if (retryContainer) {
+                    console.log("✅ Found container on retry!");
                 if (setupObserver()) {
+                        console.log("✅ Observer setup successful on retry!");
                     clearInterval(retryInterval);
                 }
-            }, 3000);
+                } else {
+                    console.log("❌ Still no container found");
+                }
             
-            // Stop retrying after 30 seconds
-            setTimeout(() => {
+                if (retryCount >= maxRetries) {
+                    console.log("❌ Max retries reached for 1v1 game");
+                    console.log("💡 Try running debugCatanExtension() in console for manual troubleshooting");
                 clearInterval(retryInterval);
-            }, 30000);
+                }
+            }, 3000);
         }
         
         console.log("Extension initialization complete");
     }
+    
+    // Add global debug function for 1v1 troubleshooting
+    window.debugCatanExtension = function() {
+        console.log("=== Manual CATAN Extension Debug ===");
+        
+        // Check DOM state
+        const scrollers = document.querySelectorAll('[class*="virtualScroller"], [class*="Scroller"]');
+        const feedMessages = document.querySelectorAll('.feedMessage-O8TLknGe');
+        const gameFeedsContainer = document.querySelector('.gameFeedsContainer-jBSxvDCV');
+        
+        console.log(`Scrollers found: ${scrollers.length}`);
+        console.log(`Feed messages found: ${feedMessages.length}`);
+        console.log(`Game feeds container found: ${!!gameFeedsContainer}`);
+        
+        if (scrollers.length > 0) {
+            scrollers.forEach((scroller, i) => {
+                console.log(`Scroller ${i}: ${scroller.className}`);
+                const messages = scroller.querySelectorAll('.feedMessage-O8TLknGe');
+                console.log(`  - Contains ${messages.length} messages`);
+            });
+        }
+        
+        // Try to find container
+        const container = findGameLogContainer();
+        if (container) {
+            console.log("✅ Container found successfully!");
+            const entries = container.querySelectorAll('.feedMessage-O8TLknGe');
+            console.log(`Found ${entries.length} feed messages to process`);
+            
+            if (setupObserver()) {
+                console.log("✅ Observer setup successful!");
+                return true;
+            } else {
+                console.log("❌ Observer setup failed");
+                return false;
+            }
+        } else {
+            console.log("❌ Container still not found");
+            return false;
+        }
+    };
     
     // Start initialization when page loads
 if (document.readyState === 'loading') {
