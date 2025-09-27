@@ -2,7 +2,7 @@
     "use strict";
     
     console.log("Colonist Card Counter extension loaded");
-    console.log("Version 1.4.17 - Development card probability tracking: shows draw chances based on played cards and remaining deck");
+    console.log("Version 1.4.18 - Fixed Monopoly and steal parsing for player names with special characters (1v1 compatibility)");
     
     // Advanced game state tracking system
     window.gameState = {
@@ -2403,18 +2403,24 @@
         try {
             const text = messageSpan.textContent;
             // A steal of more than 1 resource at a time is always a Monopoly card.
-            const stealMatch = text.match(/(\w+)\s+stole\s+(\d+)\s+/);
-
-            if (stealMatch && parseInt(stealMatch[2], 10) > 1) {
-                const playerName = stealMatch[1];
-                const amount = parseInt(stealMatch[2], 10);
+            const stealMatch = text.match(/stole\s+(\d+)\s+/);
+            
+            if (stealMatch && parseInt(stealMatch[1], 10) > 1) {
+                // Extract player name from colored span (more reliable than regex)
+                const playerSpan = messageSpan.querySelector('span[style*="color"]');
+                if (!playerSpan) return false;
+                
+                    const playerName = playerSpan.textContent.trim();
+                const amount = parseInt(stealMatch[1], 10);
                 const resourceImages = messageSpan.querySelectorAll('img[alt]');
                 
                 if (resourceImages.length > 0) {
                     const resource = resourceImages[0].alt.toLowerCase();
                     console.log(`[MONOPOLY] Detected: ${playerName} stole ${amount} ${resource} (Monopoly)`);
 
-                    window.gameState.addPlayer(playerName);
+                    // Extract player color from span
+                    const playerColor = playerSpan.style.color || '#ffffff';
+                    window.gameState.addPlayer(playerName, playerColor);
                     window.gameState.addAction({
                         type: 'monopoly',
                         player: playerName,
@@ -2493,10 +2499,23 @@
                     }
                 } else {
                     // Handle third-person steal patterns like "Player stole X from Player2"
-                    const stealMatch = text.match(/(\w+)\s+stole\s+.*?\s+from\s+(\w+)/);
-                    if (stealMatch) {
-                        const robber = stealMatch[1];
-                        let victim = stealMatch[2];
+                    if (text.includes('stole') && text.includes('from')) {
+                        // Extract robber and victim names from colored spans
+                        const playerSpans = messageSpan.querySelectorAll('span[style*="color"]');
+                        if (playerSpans.length < 1) return false;
+                        
+                        const robber = playerSpans[0].textContent.trim();
+                        let victim;
+                        
+                        if (playerSpans.length >= 2) {
+                            // Victim is in a second colored span
+                            victim = playerSpans[1].textContent.trim();
+                        } else {
+                            // Extract victim name from text after "from" (fallback)
+                            const fromMatch = text.match(/from\s+(\S+)/);
+                            if (!fromMatch) return false;
+                            victim = fromMatch[1].trim();
+                        }
                         
                         // Resolve "you" to the actual extension user (not current turn player!)
                         if (victim.toLowerCase() === 'you') {
@@ -2506,14 +2525,18 @@
                         
                         console.log(`[STEAL] Third-person steal - Robber: ${robber}, Victim: ${victim}`);
                         
+                        // Extract player colors
+                        const robberColor = playerSpans[0].style.color || '#ffffff';
+                        const victimColor = (playerSpans.length >= 2) ? (playerSpans[1].style.color || '#ffffff') : '#ffffff';
+                        
                         // Check if it's a resource card back (unknown resource)
                         const resourceCardBack = messageSpan.querySelector('img[alt*="Resource Card"]');
                         if (resourceCardBack) {
                             console.log(`[STEAL] UNKNOWN RESOURCE STOLEN: ${robber} stole from ${victim}`);
                             
-                            // Make sure both players exist
-                            window.gameState.addPlayer(robber);
-                            window.gameState.addPlayer(victim);
+                            // Make sure both players exist with colors
+                            window.gameState.addPlayer(robber, robberColor);
+                            window.gameState.addPlayer(victim, victimColor);
                             
                             // Process the steal - this creates multiple possible states
                             window.gameState.addAction({
@@ -2539,9 +2562,9 @@
                                 if (stolenResource) {
                                     console.log(`[STEAL] KNOWN THIRD-PERSON STEAL: ${robber} stole ${stolenResource} from ${victim}`);
                                     
-                                    // Make sure both players exist
-                                    window.gameState.addPlayer(robber);
-                                    window.gameState.addPlayer(victim);
+                                    // Make sure both players exist with colors
+                                    window.gameState.addPlayer(robber, robberColor);
+                                    window.gameState.addPlayer(victim, victimColor);
                                     
                                     // Process as specific resource steal
                                     window.gameState.addAction({
