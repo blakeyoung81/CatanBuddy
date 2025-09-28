@@ -714,7 +714,7 @@
             console.log(`[TURN_ORDER] Extension user:`, extensionUser);
             console.log(`[TURN_ORDER] Current turn order:`, this.turnOrder);
             
-            // Players in turn order come first
+            // Get players that are in the established turn order
             const orderedPlayers = this.turnOrder.filter(player => this.players[player]);
             
             // Add any remaining players that aren't in turn order yet
@@ -725,40 +725,29 @@
             
             let finalOrder = [];
             
-            if (orderedPlayers.length > 0 && orderedPlayers.includes(extensionUser)) {
-                // Find the extension user's position in turn order
-                const userIndex = orderedPlayers.indexOf(extensionUser);
-                console.log(`[TURN_ORDER] Extension user ${extensionUser} is at position ${userIndex + 1} of ${orderedPlayers.length}`);
+            // If we have a proper turn order and the extension user is in it
+            if (orderedPlayers.length > 1 && orderedPlayers.includes(extensionUser)) {
+                // Start with all players except the extension user, in turn order
+                const otherPlayersInOrder = orderedPlayers.filter(p => p !== extensionUser);
                 
-                // Arrange other players starting from the next player after the user (wrapping around)
-                // This mimics the clockwise seating arrangement from the user's perspective
-                const otherPlayers = orderedPlayers.filter(p => p !== extensionUser);
-                const reorderedPlayers = [];
+                // Add any remaining players
+                finalOrder = [...otherPlayersInOrder, ...remainingPlayers];
                 
-                // Start from the player after the user and wrap around
-                for (let i = 1; i < orderedPlayers.length; i++) {
-                    const nextIndex = (userIndex + i) % orderedPlayers.length;
-                    const nextPlayer = orderedPlayers[nextIndex];
-                    if (nextPlayer !== extensionUser) {
-                        reorderedPlayers.push(nextPlayer);
-                    }
-                }
+                // Always put the extension user at the bottom
+                finalOrder.push(extensionUser);
                 
-                // Final order: other players in clockwise order, then user at bottom
-                finalOrder = [...reorderedPlayers, ...remainingPlayers, extensionUser];
-                
-                console.log(`[TURN_ORDER] Clockwise arrangement from user perspective:`, reorderedPlayers);
+                console.log(`[TURN_ORDER] Arranged with user at bottom: other players in order, then user`);
             } else {
-                // Fallback: original logic if user not in turn order yet
+                // Fallback: if no proper turn order established yet
                 finalOrder = [...orderedPlayers, ...remainingPlayers];
                 
-                // Move extension user to bottom if present
+                // Ensure extension user is at bottom if present
                 if (finalOrder.includes(extensionUser)) {
                     finalOrder = finalOrder.filter(p => p !== extensionUser);
                     finalOrder.push(extensionUser);
                 }
                 
-                console.log(`[TURN_ORDER] Using fallback ordering (user not in turn order yet)`);
+                console.log(`[TURN_ORDER] Using simple ordering (turn order not fully established)`);
             }
             
             console.log(`[TURN_ORDER] Final player order for table (user at bottom):`, finalOrder);
@@ -1240,21 +1229,7 @@
                 return 0;
             }
             
-            // Get total cards from first state - should be identical across all states
-            const firstState = this.possibleStates[0];
-            if (!firstState[player]) {
-                console.log(`[DEBUG] Player ${player} not found in first state, returning 0`);
-                return 0;
-            }
-            
-            const total = ['lumber', 'brick', 'wool', 'grain', 'ore']
-                .reduce((sum, resource) => {
-                    const value = firstState[player][resource];
-                    const numericValue = typeof value === 'number' ? value : 0;
-                    return sum + numericValue;
-                }, 0);
-            
-            // Verify that all states have the same total (they should!)
+            // Calculate totals across all states
             const allTotals = this.possibleStates.map(state => {
                 if (!state[player]) return 0;
                 return ['lumber', 'brick', 'wool', 'grain', 'ore']
@@ -1267,14 +1242,18 @@
             const minTotal = Math.min(...allTotals);
             const maxTotal = Math.max(...allTotals);
             
-            if (minTotal !== maxTotal) {
-                console.warn(`[WARNING] Total cards mismatch for ${player}: ${minTotal}-${maxTotal}. This should never happen!`);
+            // If all states have the same total, return that exact value
+            if (minTotal === maxTotal) {
+                console.log(`[DEBUG] Exact total cards for ${player}: ${minTotal} (consistent across ${this.possibleStates.length} states)`);
+                return minTotal;
+            } else {
+                // If totals vary across states (due to uncertainty), return the average
+                // This gives a better estimate than just the first state
+                const avgTotal = Math.round(allTotals.reduce((sum, total) => sum + total, 0) / allTotals.length);
+                console.log(`[DEBUG] Average total cards for ${player}: ${avgTotal} (range: ${minTotal}-${maxTotal} across ${this.possibleStates.length} states)`);
                 console.log(`[DEBUG] All totals for ${player}:`, allTotals);
-                console.log(`[DEBUG] First state for ${player}:`, firstState[player]);
+                return avgTotal;
             }
-            
-            console.log(`[DEBUG] Total cards for ${player}: ${total} (from ${this.possibleStates.length} states)`);
-            return total;
         },
         
         updateResourceDisplay: function() {
