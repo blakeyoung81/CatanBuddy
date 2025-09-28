@@ -2,7 +2,7 @@
     "use strict";
     
     console.log("Colonist Card Counter extension loaded");
-    console.log("Version 1.4.21 - Enhanced debugging: improved card counting accuracy checks, detailed player ordering logs, resource calculation validation");
+    console.log("Version 1.4.22 - 1v1 Mode Debugging: Enhanced resource parsing with detailed 1v1 debug logs, parser tracking, HTML inspection for troubleshooting");
     
     // Advanced game state tracking system
     window.gameState = {
@@ -1968,11 +1968,21 @@
                 parseBuyAction
             ];
             
+            // Enhanced debugging for 1v1 mode - check each parser
+            let parserResults = [];
             for (const parseAction of actions) {
-                if (parseAction(entry, messageSpan)) {
+                const result = parseAction(entry, messageSpan);
+                parserResults.push(`${parseAction.name}: ${result}`);
+                if (result) {
                     console.log(`Successfully parsed: ${text.substring(0, 60)}...`);
                     return true;
                 }
+            }
+            
+            // Special logging for resource-related messages that failed to parse
+            if (text.includes('starting') || text.includes('got')) {
+                console.log(`[1v1-DEBUG] Failed to parse resource message: "${text}"`);
+                console.log(`[1v1-DEBUG] Parser results:`, parserResults);
             }
             
             console.log(`No parser matched: ${text.substring(0, 60)}...`);
@@ -2047,6 +2057,11 @@
             const text = messageSpan.textContent;
             console.log(`[RESOURCE] Checking text: "${text}"`);
             
+            // Enhanced debugging for 1v1 mode
+            if (text.includes('starting') || text.includes('got')) {
+                console.log(`[1v1-DEBUG] Potential resource message detected: "${text}"`);
+            }
+            
             // IMPORTANT: Skip if this is a trade message (should be handled by trade parser)
             if (text.includes('gave') && text.includes('and got') && text.includes('from')) {
                 console.log(`[RESOURCE] Skipping trade message - should be handled by trade parser`);
@@ -2055,7 +2070,8 @@
             
             const playerSpan = messageSpan.querySelector('span[style*="color"]');
             if (!playerSpan) {
-                console.log(`[RESOURCE] No player span found`);
+                console.log(`[RESOURCE] No player span found in: "${text}"`);
+                console.log(`[1v1-DEBUG] Message HTML:`, messageSpan.innerHTML);
                 return false;
             }
             
@@ -2063,12 +2079,15 @@
             const playerColor = playerSpan.style.color || '#ffffff';
             const messageText = text;
             console.log(`[RESOURCE] Player: ${playerName}, Message: "${messageText}"`);
+            console.log(`[1v1-DEBUG] Player color: ${playerColor}`);
             
             // Look for resource cards
             const resourceImages = messageSpan.querySelectorAll('img[alt*="Lumber"], img[alt*="Brick"], img[alt*="Wool"], img[alt*="Grain"], img[alt*="Ore"]');
             console.log(`[RESOURCE] Found ${resourceImages.length} resource images`);
             
             if (resourceImages.length > 0 && (messageText.includes('got') || messageText.includes('received starting resources'))) {
+                console.log(`[1v1-DEBUG] Processing resource gain with ${resourceImages.length} images`);
+                
                 const resourceMap = {
                     'Lumber': 'lumber',
                     'Brick': 'brick', 
@@ -2089,6 +2108,7 @@
                 resourceImages.forEach((img, index) => {
                     const resourceType = resourceMap[img.alt];
                     console.log(`[RESOURCE] Image ${index}: ${img.alt} -> ${resourceType}`);
+                    console.log(`[1v1-DEBUG] Image src: ${img.src}`);
                     if (resourceType) {
                         resourceCounts[resourceType]++;
                     }
@@ -2114,11 +2134,21 @@
                 return true;
     } else {
                 console.log(`[RESOURCE] Not processing: resourceImages=${resourceImages.length}, got=${messageText.includes('got')}, starting=${messageText.includes('received starting resources')}`);
+                
+                // Enhanced debugging for 1v1 mode
+                if (messageText.includes('starting') || messageText.includes('got')) {
+                    console.log(`[1v1-DEBUG] Failed to process resource message despite keywords. Conditions:`);
+                    console.log(`[1v1-DEBUG] - resourceImages.length: ${resourceImages.length}`);
+                    console.log(`[1v1-DEBUG] - includes 'got': ${messageText.includes('got')}`);
+                    console.log(`[1v1-DEBUG] - includes 'received starting resources': ${messageText.includes('received starting resources')}`);
+                    console.log(`[1v1-DEBUG] - HTML content:`, messageSpan.innerHTML.substring(0, 200));
+                }
             }
             
             return false;
         } catch (error) {
             console.error("Error parsing resource gain:", error);
+            console.error("[1v1-DEBUG] Error details:", error.message);
             return false;
         }
     }
