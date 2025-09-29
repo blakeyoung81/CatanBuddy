@@ -140,61 +140,74 @@
             return expectedPercentages[sum] || 0;
         },
 
-        // Function to calculate each player's probability of rolling a seven on their next turn
+        // Function to calculate discard risk for each player (probability anyone rolls 7 before their turn)
         calculatePlayerSevenProbabilities: function() {
             const probabilities = {};
+            const allPlayers = Object.keys(this.players);
+            const turnOrder = this.getPlayersSortedByTurnOrder();
+            const playersInTurnOrder = turnOrder.length > 0 ? turnOrder : allPlayers;
             
-            // Theoretical probability of rolling a 7 is 6/36 = 1/6 = 16.67%
-            const theoreticalSevenProb = 6/36;
+            // Theoretical probability of NOT rolling a 7 is 30/36 = 5/6
+            const probabilityNoSeven = 30/36;
             
             for (const playerName in this.players) {
+                const playerTotalCards = this.getExactTotalCards(playerName);
                 const playerRolls = this.playerRollCounts[playerName] || 0;
                 const playerSevens = this.sevenCounts[playerName] || 0;
                 
-                // Calculate total cards for this player
-                const playerTotalCards = this.getExactTotalCards(playerName);
-                
-                let sevenProbability;
-                let probabilityType;
-                
-                if (playerRolls >= 3) {
-                    // Use player's historical rate if they have enough rolls
-                    sevenProbability = playerSevens / playerRolls;
-                    probabilityType = 'historical';
-                } else {
-                    // Use theoretical probability for new players
-                    sevenProbability = theoreticalSevenProb;
-                    probabilityType = 'theoretical';
-                }
-                
-                // Calculate discard risk: probability of rolling 7 * risk level based on cards
+                // Calculate discard risk based on how many players will roll before this player's next turn
                 let discardRisk = 0;
                 let riskDescription = 'Safe';
                 
                 if (playerTotalCards >= 8) {
-                    // High risk - will definitely discard if 7 is rolled
-                    discardRisk = sevenProbability * 100; // Full probability
+                    // Find position of this player in turn order
+                    const playerIndex = playersInTurnOrder.indexOf(playerName);
+                    let playersBeforeNextTurn = 0;
+                    
+                    if (playerIndex >= 0) {
+                        // Count how many other players will roll before this player's next turn
+                        playersBeforeNextTurn = playersInTurnOrder.length - 1; // All other players
+                    } else {
+                        // If player not in turn order yet, assume they're last
+                        playersBeforeNextTurn = playersInTurnOrder.length;
+                    }
+                    
+                    // Probability that NO ONE rolls a 7 in the upcoming turns
+                    const probabilityNoOneRollsSeven = Math.pow(probabilityNoSeven, playersBeforeNextTurn);
+                    
+                    // Probability that SOMEONE rolls a 7 (what we want)
+                    const probabilitySomeoneRollsSeven = 1 - probabilityNoOneRollsSeven;
+                    
+                    discardRisk = probabilitySomeoneRollsSeven * 100;
                     riskDescription = 'High Risk';
                 } else if (playerTotalCards >= 6) {
-                    // Moderate risk - close to discard threshold
-                    discardRisk = sevenProbability * 50; // Half probability as warning
+                    // Moderate risk calculation similar to above but with lower weight
+                    const playerIndex = playersInTurnOrder.indexOf(playerName);
+                    let playersBeforeNextTurn = 0;
+                    
+                    if (playerIndex >= 0) {
+                        playersBeforeNextTurn = playersInTurnOrder.length - 1;
+                    } else {
+                        playersBeforeNextTurn = playersInTurnOrder.length;
+                    }
+                    
+                    const probabilityNoOneRollsSeven = Math.pow(probabilityNoSeven, playersBeforeNextTurn);
+                    const probabilitySomeoneRollsSeven = 1 - probabilityNoOneRollsSeven;
+                    
+                    discardRisk = probabilitySomeoneRollsSeven * 50; // Half weight for moderate risk
                     riskDescription = 'Moderate Risk';
                 } else {
-                    // Low/no risk
                     discardRisk = 0;
                     riskDescription = 'Safe';
                 }
                 
                 probabilities[playerName] = {
-                    probability: sevenProbability,
-                    percentage: (sevenProbability * 100).toFixed(1),
                     discardRisk: discardRisk,
                     discardRiskPercentage: discardRisk.toFixed(1),
                     riskDescription: riskDescription,
                     totalCards: playerTotalCards,
                     totalRolls: playerRolls,
-                    totalSevens: playerSevens,
-                    type: probabilityType
+                    totalSevens: playerSevens
                 };
             }
             
@@ -279,13 +292,13 @@
                     
                     // Player name with color
                     const nameCell = document.createElement('td');
-                    nameCell.style.cssText = `padding: 3px 6px; color: ${playerColor}; font-weight: bold;`;
+                    nameCell.style.cssText = `padding: 2px 4px; color: ${playerColor}; font-weight: bold;`;
                     nameCell.textContent = playerName;
                     row.appendChild(nameCell);
                     
-                    // Discard risk percentage (likelihood they'll have to discard if 7 is rolled)
+                    // Discard risk percentage (likelihood anyone rolls 7 before their turn)
                     const riskCell = document.createElement('td');
-                    riskCell.style.cssText = 'padding: 3px 6px; text-align: center;';
+                    riskCell.style.cssText = 'padding: 2px 4px; text-align: center;';
                     const prob = probabilities[playerName];
                     if (prob) {
                         riskCell.textContent = `${prob.discardRiskPercentage}%`;
@@ -297,58 +310,27 @@
                         } else {
                             riskCell.style.color = '#90EE90'; // Green - safe (0-5 cards)
                         }
-                        // Add indicator for historical vs theoretical
-                        if (prob.type === 'theoretical') {
-                            riskCell.style.fontStyle = 'italic';
-                        }
                         // Add tooltip showing card count
-                        riskCell.title = `${prob.totalCards} cards - ${prob.riskDescription}`;
+                        riskCell.title = `${prob.totalCards} cards - ${prob.riskDescription}\nProbability that someone rolls 7 before this player's turn`;
                     } else {
                         riskCell.textContent = '0.0%'; // No data available
                         riskCell.style.color = '#90EE90';
-                        riskCell.style.fontStyle = 'italic';
                     }
                     row.appendChild(riskCell);
                     
-                    // Seven count / total rolls
+                    // Seven count only (no percentage)
                     const countCell = document.createElement('td');
-                    countCell.style.cssText = 'padding: 3px 6px; text-align: center;';
+                    countCell.style.cssText = 'padding: 2px 4px; text-align: center;';
                     const sevenCount = this.sevenCounts[playerName] || 0;
-                    const totalRolls = this.playerRollCounts[playerName] || 0;
-                    if (totalRolls > 0) {
-                        countCell.textContent = `${sevenCount}/${totalRolls}`;
-                        if (sevenCount > 0) {
-                            countCell.style.color = '#FF6B6B'; // Red for any sevens
-                            countCell.style.fontWeight = 'bold';
-                        }
+                    countCell.textContent = sevenCount.toString();
+                    if (sevenCount > 0) {
+                        countCell.style.color = '#FF6B6B'; // Red for any sevens
+                        countCell.style.fontWeight = 'bold';
                     } else {
-                        countCell.textContent = '0/0';
-                        countCell.style.color = '#888888';
-                        countCell.style.fontStyle = 'italic';
+                        countCell.style.color = '#90EE90'; // Green for no sevens
                     }
+                    countCell.title = `${playerName} has rolled ${sevenCount} sevens`;
                     row.appendChild(countCell);
-                    
-                    // Average percentage (historical rate)
-                    const avgCell = document.createElement('td');
-                    avgCell.style.cssText = 'padding: 3px 6px; text-align: center;';
-                    if (totalRolls >= 3) {
-                        const actualRate = (sevenCount / totalRolls * 100).toFixed(1);
-                        avgCell.textContent = `${actualRate}%`;
-                        const theoretical = 16.7;
-                        const actualValue = parseFloat(actualRate);
-                        if (actualValue > theoretical + 5) {
-                            avgCell.style.color = '#FF6B6B'; // Red - rolls sevens more than expected
-                        } else if (actualValue < theoretical - 5) {
-                            avgCell.style.color = '#90EE90'; // Green - rolls sevens less than expected
-                        } else {
-                            avgCell.style.color = '#FFD700'; // Gold - normal range
-                        }
-                    } else {
-                        avgCell.textContent = '16.7%';
-                        avgCell.style.color = '#888888';
-                        avgCell.style.fontStyle = 'italic';
-                    }
-                    row.appendChild(avgCell);
                     
                     turnTbody.appendChild(row);
                 });
@@ -1332,7 +1314,7 @@
                 const cell = document.createElement('td');
                 cell.id = `player-${playerName}-${resource}`;
                 cell.style.textAlign = 'center';
-                cell.style.padding = '4px 8px';
+                cell.style.padding = '2px 4px';
                 
                 const value = player.resources[resource] || 0;
                 cell.textContent = value;
@@ -1364,7 +1346,7 @@
             const nameCell = document.createElement('td');
             nameCell.textContent = playerName;
             nameCell.style.fontWeight = 'bold';
-            nameCell.style.padding = '4px 8px';
+            nameCell.style.padding = '2px 4px';
             
             // Apply player's game color to their name
             if (player && player.color && player.color !== '#ffffff') {
@@ -1385,7 +1367,7 @@
                 const cell = document.createElement('td');
                 cell.id = `player-${playerName}-${resource}`;
                 cell.style.textAlign = 'center';
-                cell.style.padding = '4px 8px';
+                cell.style.padding = '2px 4px';
                 
                 const range = this.getResourceRange(playerName, resource);
                 if (range.certain) {
@@ -1461,15 +1443,16 @@
                 top: ${position.top};
                 left: ${position.left};
                 z-index: 10000;
-                background: rgba(0, 0, 0, 0.8);
+                background: rgba(0, 0, 0, 0.85);
                 color: white;
-                padding: 10px;
-                border-radius: 5px;
+                padding: 8px;
+                border-radius: 4px;
                 font-family: Arial, sans-serif;
-                font-size: 12px;
+                font-size: 11px;
                 cursor: move;
                 user-select: none;
                 border: 1px solid #666;
+                min-width: 160px;
             `;
             
             const table = document.createElement('table');
@@ -1480,15 +1463,15 @@
             const header = document.createElement('thead');
             header.innerHTML = `
                 <tr>
-                    <th colspan="4" style="text-align: center; padding: 5px; border-bottom: 1px solid #666;">
+                    <th colspan="4" style="text-align: center; padding: 4px; border-bottom: 1px solid #666; font-size: 12px;">
                         Dice Statistics (Excluding 7s)
                     </th>
                 </tr>
                 <tr style="border-bottom: 1px solid #666;">
-                    <th style="padding: 3px 6px;">Roll</th>
-                    <th style="padding: 3px 6px;">Count</th>
-                    <th style="padding: 3px 6px;">%</th>
-                    <th style="padding: 3px 6px;">Ratio</th>
+                    <th style="padding: 2px 4px; width: 25%;">Roll</th>
+                    <th style="padding: 2px 4px; width: 25%;">Count</th>
+                    <th style="padding: 2px 4px; width: 25%;">%</th>
+                    <th style="padding: 2px 4px; width: 25%;">Ratio</th>
                 </tr>
             `;
             table.appendChild(header);
@@ -1502,10 +1485,10 @@
                 const expected = window.gameState.getDiceExpectedPercentage(i);
                 
                 row.innerHTML = `
-                    <td style="padding: 2px 6px; text-align: center;">${i}</td>
-                    <td id="count-${i}" style="padding: 2px 6px; text-align: center;">0</td>
-                    <td id="percentage-${i}" style="padding: 2px 6px; text-align: center;">0.0%</td>
-                    <td id="expected-${i}" style="padding: 2px 6px; text-align: center;">0.00</td>
+                    <td style="padding: 1px 4px; text-align: center;">${i}</td>
+                    <td id="count-${i}" style="padding: 1px 4px; text-align: center;">0</td>
+                    <td id="percentage-${i}" style="padding: 1px 4px; text-align: center;">0%</td>
+                    <td id="expected-${i}" style="padding: 1px 4px; text-align: center;">0.00</td>
                 `;
                 tbody.appendChild(row);
             }
@@ -1514,8 +1497,8 @@
             const totalRow = document.createElement('tr');
             totalRow.style.borderTop = '1px solid #666';
             totalRow.innerHTML = `
-                <td style="padding: 3px 6px; font-weight: bold;">Total</td>
-                <td id="dice-total-rolls" style="padding: 3px 6px; text-align: center; font-weight: bold;">0</td>
+                <td style="padding: 2px 4px; font-weight: bold;">Total</td>
+                <td id="dice-total-rolls" style="padding: 2px 4px; text-align: center; font-weight: bold;">0</td>
                 <td colspan="2"></td>
             `;
             tbody.appendChild(totalRow);
@@ -1526,15 +1509,14 @@
             const sevenHeader = document.createElement('thead');
             sevenHeader.innerHTML = `
                 <tr>
-                    <th colspan="4" style="text-align: center; padding: 5px; border-top: 2px solid #666; border-bottom: 1px solid #666;">
+                    <th colspan="3" style="text-align: center; padding: 4px; border-top: 2px solid #666; border-bottom: 1px solid #666; font-size: 12px;">
                         Player Seven Statistics
                     </th>
                 </tr>
                 <tr style="border-bottom: 1px solid #666;">
-                    <th style="padding: 3px 6px;">Player</th>
-                    <th style="padding: 3px 6px;">Discard Risk %</th>
-                    <th style="padding: 3px 6px;">7s/Rolls</th>
-                    <th style="padding: 3px 6px;">Historical %</th>
+                    <th style="padding: 2px 4px; width: 40%;">Player</th>
+                    <th style="padding: 2px 4px; width: 30%;">Discard Risk %</th>
+                    <th style="padding: 2px 4px; width: 30%;">7s Rolled</th>
                 </tr>
             `;
             table.appendChild(sevenHeader);
@@ -1548,15 +1530,15 @@
             const devCardHeader = document.createElement('thead');
             devCardHeader.innerHTML = `
                 <tr>
-                    <th colspan="4" style="text-align: center; padding: 5px; border-top: 2px solid #666; border-bottom: 1px solid #666;">
+                    <th colspan="4" style="text-align: center; padding: 4px; border-top: 2px solid #666; border-bottom: 1px solid #666; font-size: 12px;">
                         Development Card Probabilities
                     </th>
                 </tr>
                 <tr style="border-bottom: 1px solid #666;">
-                    <th style="padding: 3px 6px;">Card Type</th>
-                    <th style="padding: 3px 6px;">Draw %</th>
-                    <th style="padding: 3px 6px;">Played</th>
-                    <th style="padding: 3px 6px;">Left</th>
+                    <th style="padding: 2px 4px; width: 25%;">Card Type</th>
+                    <th style="padding: 2px 4px; width: 25%;">Draw %</th>
+                    <th style="padding: 2px 4px; width: 25%;">Played</th>
+                    <th style="padding: 2px 4px; width: 25%;">Left</th>
                 </tr>
             `;
             table.appendChild(devCardHeader);
@@ -1600,28 +1582,29 @@
                 top: ${position.top};
                 left: ${position.left};
                 z-index: 10000;
-                background: rgba(0, 0, 0, 0.8);
+                background: rgba(0, 0, 0, 0.85);
                 color: white;
-                padding: 10px;
-                border-radius: 5px;
+                padding: 8px;
+                border-radius: 4px;
                 font-family: Arial, sans-serif;
-                font-size: 12px;
+                font-size: 11px;
                 cursor: move;
                 user-select: none;
                 border: 1px solid #666;
+                min-width: 200px;
             `;
             
             const table = document.createElement('table');
             table.id = 'resource-table';
-            table.style.cssText = 'border-collapse: collapse;';
+            table.style.cssText = 'border-collapse: collapse; width: 100%;';
             
             // Header
             const header = document.createElement('thead');
             header.innerHTML = `
                 <tr>
-                    <th colspan="7" style="text-align: center; padding: 5px; border-bottom: 1px solid #666;">
+                    <th colspan="7" style="text-align: center; padding: 4px; border-bottom: 1px solid #666; font-size: 12px;">
                         Advanced Resource Tracker
-                        <div style="font-size: 10px; font-weight: normal;">
+                        <div style="font-size: 9px; font-weight: normal; margin-top: 2px;">
                             States: <span id="states-count">1</span> | 
                             <span style="color: #0f0;">Green = Certain</span> | 
                             <span style="color: #ff0;">Yellow = Range</span>
@@ -1629,13 +1612,13 @@
                     </th>
                 </tr>
                 <tr style="border-bottom: 1px solid #666;">
-                    <th style="padding: 3px 6px;">Player</th>
-                    <th style="padding: 3px 6px;">🌲</th>
-                    <th style="padding: 3px 6px;">🧱</th>
-                    <th style="padding: 3px 6px;">🐑</th>
-                    <th style="padding: 3px 6px;">🌾</th>
-                    <th style="padding: 3px 6px;">⛰️</th>
-                    <th style="padding: 3px 6px;">Total</th>
+                    <th style="padding: 2px 4px; width: 20%;">Player</th>
+                    <th style="padding: 2px 4px; width: 13%;">🌲</th>
+                    <th style="padding: 2px 4px; width: 13%;">🧱</th>
+                    <th style="padding: 2px 4px; width: 13%;">🐑</th>
+                    <th style="padding: 2px 4px; width: 13%;">🌾</th>
+                    <th style="padding: 2px 4px; width: 13%;">⛰️</th>
+                    <th style="padding: 2px 4px; width: 15%;">Total</th>
                 </tr>
             `;
             table.appendChild(header);
