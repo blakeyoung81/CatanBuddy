@@ -69,8 +69,6 @@
                 
                 // Update counts
                 for (let i = 2; i <= 12; i++) {
-                    if (i === 7) continue; // Skip 7s - they're tracked separately in Player Seven Statistics
-                    
                     const countCell = document.getElementById(`count-${i}`);
                     if (countCell) {
                         countCell.textContent = this.diceCounts[i];
@@ -516,6 +514,26 @@
         // Track processed entries to prevent duplicates
         processedEntries: new Set(),
         
+        // DEBUG function to inspect current resource state
+        debugResourceState: function() {
+            console.log("=== RESOURCE STATE DEBUG ===");
+            console.log(`Total possible states: ${this.possibleStates.length}`);
+            
+            if (this.possibleStates.length > 0) {
+                const state = this.possibleStates[0];
+                console.log("Current state:", JSON.stringify(state, null, 2));
+                
+                for (const playerName in state) {
+                    const playerState = state[playerName];
+                    const total = Object.values(playerState).reduce((sum, val) => sum + val, 0);
+                    console.log(`${playerName}: Total=${total} (${JSON.stringify(playerState)})`);
+                }
+            } else {
+                console.log("No possible states available");
+            }
+            console.log("=== END DEBUG ===");
+        },
+        
         // Track current player name for turn tracking
         currentPlayer: null,
         
@@ -692,18 +710,11 @@
             const allPlayers = Object.keys(this.players);
             const extensionUser = this.getExtensionUser();
             
-            console.log(`[TURN_ORDER] All players:`, allPlayers);
-            console.log(`[TURN_ORDER] Extension user:`, extensionUser);
-            console.log(`[TURN_ORDER] Current turn order:`, this.turnOrder);
-            
             // Get players that are in the established turn order
             const orderedPlayers = this.turnOrder.filter(player => this.players[player]);
             
             // Add any remaining players that aren't in turn order yet
             const remainingPlayers = allPlayers.filter(player => !this.turnOrder.includes(player));
-            
-            console.log(`[TURN_ORDER] Ordered players:`, orderedPlayers);
-            console.log(`[TURN_ORDER] Remaining players:`, remainingPlayers);
             
             let finalOrder = [];
             
@@ -717,8 +728,6 @@
                 
                 // Always put the extension user at the bottom
                 finalOrder.push(extensionUser);
-                
-                console.log(`[TURN_ORDER] Arranged with user at bottom: other players in order, then user`);
             } else {
                 // Fallback: if no proper turn order established yet
                 finalOrder = [...orderedPlayers, ...remainingPlayers];
@@ -728,11 +737,7 @@
                     finalOrder = finalOrder.filter(p => p !== extensionUser);
                     finalOrder.push(extensionUser);
                 }
-                
-                console.log(`[TURN_ORDER] Using simple ordering (turn order not fully established)`);
             }
-            
-            console.log(`[TURN_ORDER] Final player order for table (user at bottom):`, finalOrder);
             return finalOrder;
         },
         
@@ -753,30 +758,9 @@
         
         // Advanced state management methods
         addAction: function(action) {
-            // Enhanced duplicate detection for build actions
-            if (action.type === 'spent_resources' && action.building) {
-                // Check if we just processed a similar build action for the same player
-                const recentActions = this.confirmedActions.slice(-5); // Check last 5 actions
-                const duplicateBuild = recentActions.find(recent => 
-                    recent.type === 'spent_resources' && 
-                    recent.player === action.player && 
-                    recent.building === action.building &&
-                    JSON.stringify(recent.cost) === JSON.stringify(action.cost) &&
-                    (Date.now() - recent.timestamp) < 2000 // Within 2 seconds
-                );
-                
-                if (duplicateBuild) {
-                    console.log(`[BUILD] Duplicate build action detected for ${action.player} building ${action.building}. Skipping.`);
-                    return; // Skip this duplicate action
-                }
-            }
-            
-            // Create unique identifier for this action to prevent duplicates
-            const actionId = `${action.type}-${action.player || 'unknown'}-${Date.now()}-${Math.random()}`;
-            
-            // Add timestamp for duplicate detection
-            const actionWithTimestamp = {...action, id: actionId, timestamp: Date.now()};
-            this.confirmedActions.push(actionWithTimestamp);
+            // No duplicate detection needed here - we already prevent message-level duplicates
+            // using contentHash, so each message should only be processed once
+            this.confirmedActions.push(action);
             
             // Track game phase transitions
             if (action.type === 'dice_roll' && this.gamePhase === 'initial') {
@@ -844,16 +828,14 @@
                             }
                         }
                         newStates.push(spentState);
-                        console.log(`State after ${action.player} spent resources:`, spentState[action.player]);
                     } else {
-                        console.log(`${action.player} cannot afford ${JSON.stringify(action.cost)} in state:`, spentState[action.player]);
+                        console.log(`[WARN] ${action.player} cannot afford ${JSON.stringify(action.cost)}`);
                         // If player can't afford it, this state is eliminated
                     }
                     break;
                     
                 case 'traded':
                     // Handle trades between players (legacy simple trades)
-                    console.log(`[STATE] Processing trade: ${action.trader} gave ${action.traderGave}, received ${action.traderReceived}, partner: ${action.partner}`);
                     
                     // Ensure both players exist in state
                     const tradeState = JSON.parse(JSON.stringify(state));
@@ -869,10 +851,6 @@
                     const traderHasResource = tradeState[action.trader][action.traderGave] > 0;
                     const partnerHasResource = tradeState[action.partner][action.traderReceived] > 0;
                         
-                    console.log(`[STATE] Before trade - ${action.trader}:`, tradeState[action.trader]);
-                    console.log(`[STATE] Before trade - ${action.partner}:`, tradeState[action.partner]);
-                        console.log(`[STATE] Trader has ${action.traderGave}? ${traderHasResource}, Partner has ${action.traderReceived}? ${partnerHasResource}`);
-                        
                         if (traderHasResource && partnerHasResource) {
                             // Trader: loses what they gave, gains what they received
                         tradeState[action.trader][action.traderGave] -= 1;
@@ -882,19 +860,14 @@
                         tradeState[action.partner][action.traderReceived] -= 1;
                         tradeState[action.partner][action.traderGave] += 1;
                             
-                            console.log(`[STATE] TRADE PROCESSED: ${action.trader} (${action.traderGave} → ${action.traderReceived}), ${action.partner} (${action.traderReceived} → ${action.traderGave})`);
-                        console.log(`[STATE] After trade - ${action.trader}:`, tradeState[action.trader]);
-                        console.log(`[STATE] After trade - ${action.partner}:`, tradeState[action.partner]);
                         newStates.push(tradeState);
         } else {
-                            console.log(`[STATE] TRADE ELIMINATED STATE - ${action.trader} has ${action.traderGave}? ${traderHasResource}, ${action.partner} has ${action.traderReceived}? ${partnerHasResource}`);
                             // This state is eliminated because the trade is impossible
                         }
                     break;
                     
                 case 'traded_complex':
                     // Handle complex trades with multiple resources
-                    console.log(`[STATE] Processing complex trade: ${action.trader} gave`, action.traderGave, 'received', action.traderReceived, `partner: ${action.partner}`);
                     
                     // Ensure both players exist in state
                     const complexTradeState = JSON.parse(JSON.stringify(state));
@@ -1178,7 +1151,6 @@
         
         getResourceRange: function(player, resource) {
             if (this.possibleStates.length === 0) {
-                console.log(`[DEBUG] No possible states for resource range: ${player} ${resource}`);
                 return { min: 0, max: 0, certain: true, value: 0 };
             }
             
@@ -1192,10 +1164,6 @@
             const min = Math.min(...numericValues);
             const max = Math.max(...numericValues);
             
-            // Debug logging for problematic cases
-            if (min !== max) {
-                console.log(`[DEBUG] Resource range for ${player} ${resource}: ${min}-${max} (from ${this.possibleStates.length} states)`);
-            }
             
             return {
                 min: min,
@@ -1207,7 +1175,6 @@
         
         getExactTotalCards: function(player) {
             if (this.possibleStates.length === 0) {
-                console.log(`[DEBUG] No possible states for ${player}, returning 0`);
                 return 0;
             }
             
@@ -1226,14 +1193,11 @@
             
             // If all states have the same total, return that exact value
             if (minTotal === maxTotal) {
-                console.log(`[DEBUG] Exact total cards for ${player}: ${minTotal} (consistent across ${this.possibleStates.length} states)`);
                 return minTotal;
             } else {
                 // If totals vary across states (due to uncertainty), return the average
                 // This gives a better estimate than just the first state
                 const avgTotal = Math.round(allTotals.reduce((sum, total) => sum + total, 0) / allTotals.length);
-                console.log(`[DEBUG] Average total cards for ${player}: ${avgTotal} (range: ${minTotal}-${maxTotal} across ${this.possibleStates.length} states)`);
-                console.log(`[DEBUG] All totals for ${player}:`, allTotals);
                 return avgTotal;
             }
         },
@@ -1256,11 +1220,8 @@
             );
             
             if (this.gamePhase === 'initial' && !hasAnyResources) {
-                console.log(`[TABLE] Hiding resource table during initial placement - waiting for second settlement resources`);
                 return;
             }
-            
-            console.log(`[TABLE] Showing resource table - gamePhase: ${this.gamePhase}, hasResources: ${hasAnyResources}`);
             
             // Get all players from all states
             const allPlayers = new Set();
@@ -1273,8 +1234,6 @@
             const orderedPlayers = this.getPlayersSortedByTurnOrder();
             const remainingPlayers = Array.from(allPlayers).filter(player => !orderedPlayers.includes(player));
             const finalPlayerOrder = [...orderedPlayers, ...remainingPlayers];
-            
-            console.log(`[TABLE] Building table with player order:`, finalPlayerOrder);
             
             // Create rows for each player in turn order
             for (const playerName of finalPlayerOrder) {
@@ -1340,8 +1299,6 @@
             const row = document.createElement('tr');
             const player = this.players[playerName];
             
-            console.log(`[TABLE] Adding player ${playerName} to resource table`);
-            
             // Player name cell with color coding
             const nameCell = document.createElement('td');
             nameCell.textContent = playerName;
@@ -1351,7 +1308,6 @@
             // Apply player's game color to their name
             if (player && player.color && player.color !== '#ffffff') {
                 nameCell.style.color = player.color;
-                console.log(`[TABLE] Applied color ${player.color} to player ${playerName}`);
             } else {
                 // Default white color for unrecognized or default colors
                 nameCell.style.color = '#ffffff';
@@ -1399,11 +1355,10 @@
             
             // Calculate exact total from all possible states - should be the same across all states
             const exactTotal = this.getExactTotalCards(playerName);
+            
             // Ensure total is always a number
             const displayTotal = exactTotal !== null && exactTotal !== undefined ? exactTotal : 0;
             totalCell.textContent = displayTotal.toString();
-            
-            console.log(`[TABLE] Player ${playerName} total cards: ${displayTotal} (calculated vs range: ${totalMin}-${totalMax})`);
             
             // Warn if calculated total doesn't match range total
             if (displayTotal < totalMin || displayTotal > totalMax) {
@@ -1438,6 +1393,15 @@
             
             const container = document.createElement('div');
             container.id = 'dice-table-container';
+            // Get saved size or use default
+            const savedSize = localStorage.getItem('diceTableSize');
+            let width = '80px', height = 'auto';
+            if (savedSize) {
+                const size = JSON.parse(savedSize);
+                width = size.width;
+                height = size.height;
+            }
+            
             container.style.cssText = `
                 position: fixed;
                 top: ${position.top};
@@ -1445,14 +1409,18 @@
                 z-index: 10000;
                 background: rgba(0, 0, 0, 0.85);
                 color: white;
-                padding: 8px;
+                padding: 8px 8px 20px 8px;
                 border-radius: 4px;
                 font-family: Arial, sans-serif;
                 font-size: 11px;
                 cursor: move;
                 user-select: none;
                 border: 1px solid #666;
-                min-width: 160px;
+                min-width: 80px;
+                width: ${width};
+                height: ${height};
+                resize: both;
+                overflow: auto;
             `;
             
             const table = document.createElement('table');
@@ -1464,7 +1432,7 @@
             header.innerHTML = `
                 <tr>
                     <th colspan="4" style="text-align: center; padding: 4px; border-bottom: 1px solid #666; font-size: 12px;">
-                        Dice Statistics (Excluding 7s)
+                        Dice Statistics
                     </th>
                 </tr>
                 <tr style="border-bottom: 1px solid #666;">
@@ -1479,8 +1447,6 @@
             // Body
             const tbody = document.createElement('tbody');
             for (let i = 2; i <= 12; i++) {
-                if (i === 7) continue; // Skip 7s - they have their own section below
-                
                 const row = document.createElement('tr');
                 const expected = window.gameState.getDiceExpectedPercentage(i);
                 
@@ -1554,6 +1520,34 @@
             
             container.appendChild(table);
             
+            // Add resize handle
+            const resizeHandle = document.createElement('div');
+            resizeHandle.style.cssText = `
+                position: absolute;
+                bottom: 0px;
+                right: 0px;
+                width: 15px;
+                height: 15px;
+                background: linear-gradient(-45deg, transparent 0px, transparent 1px, #666 1px, #666 2px, transparent 2px, transparent 4px, #666 4px, #666 5px, transparent 5px, transparent 7px, #666 7px, #666 8px, transparent 8px);
+                cursor: se-resize;
+                opacity: 0.7;
+            `;
+            resizeHandle.addEventListener('mouseenter', () => resizeHandle.style.opacity = '1');
+            resizeHandle.addEventListener('mouseleave', () => resizeHandle.style.opacity = '0.7');
+            container.appendChild(resizeHandle);
+            
+            // Save size when container is resized
+            const resizeObserver = new ResizeObserver(entries => {
+                for (let entry of entries) {
+                    const { width, height } = entry.contentRect;
+                    localStorage.setItem('diceTableSize', JSON.stringify({
+                        width: `${width + 16}px`, // Add padding
+                        height: `${height + 28}px` // Add padding + resize handle space
+                    }));
+                }
+            });
+            resizeObserver.observe(container);
+            
             // Make draggable
             makeDraggable(container, 'diceTablePosition');
             
@@ -1577,6 +1571,20 @@
             
             const container = document.createElement('div');
             container.id = 'resource-table-container';
+            // Get saved size or use default (300px height fits 4-6 players comfortably)
+            const savedSize = localStorage.getItem('resourceTableSize');
+            let width = '150px', height = '300px';
+            if (savedSize) {
+                const size = JSON.parse(savedSize);
+                width = size.width;
+                height = size.height;
+                // Ensure minimum height for 4+ players
+                const heightNum = parseInt(height);
+                if (heightNum < 200) {
+                    height = '300px';
+                }
+            }
+            
             container.style.cssText = `
                 position: fixed;
                 top: ${position.top};
@@ -1584,14 +1592,18 @@
                 z-index: 10000;
                 background: rgba(0, 0, 0, 0.85);
                 color: white;
-                padding: 8px;
+                padding: 8px 8px 20px 8px;
                 border-radius: 4px;
                 font-family: Arial, sans-serif;
                 font-size: 11px;
                 cursor: move;
                 user-select: none;
                 border: 1px solid #666;
-                min-width: 200px;
+                min-width: 150px;
+                width: ${width};
+                height: ${height};
+                resize: both;
+                overflow: auto;
             `;
             
             const table = document.createElement('table');
@@ -1628,6 +1640,34 @@
             
             container.appendChild(table);
             
+            // Add resize handle
+            const resizeHandle = document.createElement('div');
+            resizeHandle.style.cssText = `
+                position: absolute;
+                bottom: 0px;
+                right: 0px;
+                width: 15px;
+                height: 15px;
+                background: linear-gradient(-45deg, transparent 0px, transparent 1px, #666 1px, #666 2px, transparent 2px, transparent 4px, #666 4px, #666 5px, transparent 5px, transparent 7px, #666 7px, #666 8px, transparent 8px);
+                cursor: se-resize;
+                opacity: 0.7;
+            `;
+            resizeHandle.addEventListener('mouseenter', () => resizeHandle.style.opacity = '1');
+            resizeHandle.addEventListener('mouseleave', () => resizeHandle.style.opacity = '0.7');
+            container.appendChild(resizeHandle);
+            
+            // Save size when container is resized
+            const resizeObserver = new ResizeObserver(entries => {
+                for (let entry of entries) {
+                    const { width, height } = entry.contentRect;
+                    localStorage.setItem('resourceTableSize', JSON.stringify({
+                        width: `${width + 16}px`, // Add padding
+                        height: `${height + 28}px` // Add padding + resize handle space
+                    }));
+                }
+            });
+            resizeObserver.observe(container);
+            
             // Make draggable
             makeDraggable(container, 'resourceTablePosition');
             
@@ -1649,6 +1689,10 @@
         let yOffset = 0;
         
         element.addEventListener('mousedown', (e) => {
+            // Don't start dragging if clicking on resize handle
+            if (e.target.style && e.target.style.cursor === 'se-resize') {
+                return;
+            }
             initialX = e.clientX - xOffset;
             initialY = e.clientY - yOffset;
             if (e.target === element || e.target.closest(`#${element.id}`)) {
@@ -1977,7 +2021,6 @@
                     
                     // Add player and track dice roll
                     window.gameState.addPlayer(playerName, playerColor);
-                    window.gameState.incrementDiceCount(sum);
                     
                     // Track player-specific roll counts
                     if (!window.gameState.playerRollCounts[playerName]) {
@@ -1985,7 +2028,7 @@
                     }
                     window.gameState.playerRollCounts[playerName]++;
                     
-                    // Track sevens specifically for this player
+                    // Track sevens specifically for this player BEFORE updating the table
                     if (sum === 7) {
                         if (!window.gameState.sevenCounts[playerName]) {
                             window.gameState.sevenCounts[playerName] = 0;
@@ -1993,6 +2036,9 @@
                         window.gameState.sevenCounts[playerName]++;
                         console.log(`[SEVEN] ${playerName} rolled a seven! Player sevens: ${window.gameState.sevenCounts[playerName]}/${window.gameState.playerRollCounts[playerName]} rolls`);
                     }
+                    
+                    // Now increment dice count which triggers table update with correct seven count
+                    window.gameState.incrementDiceCount(sum);
                     
                     // This player is actively rolling, so they're likely the current player
                     window.gameState.setCurrentPlayer(playerName);
@@ -2083,7 +2129,8 @@
                 
                 for (const [resource, count] of Object.entries(resourceCounts)) {
                     if (count > 0) {
-                        console.log(`[RESOURCE] PROCESSING: ${playerName} ${messageText.includes('starting') ? 'received starting' : 'got'} ${count}x ${resource}`);
+                        // DEBUG: Log the current state before adding this resource
+                        console.log(`[RESOURCE] ${playerName} ${messageText.includes('starting') ? 'received starting' : 'got'} ${count}x ${resource}`);
                         window.gameState.addAction({
                             type: 'got_resource',
                             player: playerName,
@@ -2945,20 +2992,7 @@
                     console.log(`[BUY] Player: ${playerName}, Color: ${playerColor}`);
                     window.gameState.setCurrentPlayer(playerName);
 
-                    // Check for duplicate detection with shorter time window
-                    const now = Date.now();
-                    const recentActions = window.gameState.confirmedActions.slice(-3);
-                    const isDuplicate = recentActions.some(action => 
-                        action.type === 'spent_resources' && 
-                        action.player === playerName &&
-                        action.reason && action.reason.includes('bought Development Card') &&
-                        (now - action.timestamp) < 1000 // 1 second window
-                    );
-                    
-                    if (isDuplicate) {
-                        console.log(`[BUY] Duplicate 'bought Development Card' action detected for ${playerName}. Skipping.`);
-                        return true;
-                    }
+                    // No duplicate detection needed - messages are already deduplicated by contentHash
                     
                     let cost = {};
                     let itemBought = '';
@@ -2994,10 +3028,11 @@
                         cost = { grain: 1, ore: 1, wool: 1 };
                         itemBought = 'Development Card';
                         console.log(`[BUY] ✅ CONFIRMED Development Card purchase detected`);
+                        console.log(`[BUY] Development Card cost set to:`, JSON.stringify(cost));
                     }
                     
                     if (Object.keys(cost).length > 0) {
-                        console.log(`[BUY] ${playerName} bought ${itemBought}, deducting cost:`, cost);
+                        console.log(`[BUY] ${playerName} bought ${itemBought}, deducting cost:`, JSON.stringify(cost));
                         
                         // Make sure player exists with their color
                         window.gameState.addPlayer(playerName, playerColor);
@@ -3012,10 +3047,10 @@
                             type: 'spent_resources',
                             player: playerName,
                             cost: cost,
-                            reason: `bought ${itemBought}`,
-                            timestamp: Date.now()
+                            reason: `bought ${itemBought}`
                         };
                         
+                        console.log(`[BUY] Adding action to game state:`, JSON.stringify(action));
                         window.gameState.addAction(action);
                         console.log(`[BUY] ✅ Successfully processed ${itemBought} purchase for ${playerName}`);
                         
