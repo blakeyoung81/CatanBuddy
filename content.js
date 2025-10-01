@@ -1689,10 +1689,21 @@
         let yOffset = 0;
         
         element.addEventListener('mousedown', (e) => {
-            // Don't start dragging if clicking on resize handle
+            // Don't start dragging if clicking on resize handle or in resize area
             if (e.target.style && e.target.style.cursor === 'se-resize') {
                 return;
             }
+            
+            // Check if click is in bottom-right corner (resize area)
+            const rect = element.getBoundingClientRect();
+            const clickX = e.clientX - rect.left;
+            const clickY = e.clientY - rect.top;
+            const isInResizeZone = (clickX > rect.width - 25) && (clickY > rect.height - 25);
+            
+            if (isInResizeZone) {
+                return;
+            }
+            
             initialX = e.clientX - xOffset;
             initialY = e.clientY - yOffset;
             if (e.target === element || e.target.closest(`#${element.id}`)) {
@@ -1922,6 +1933,206 @@
                         }
     }
     
+    // Function to show end-game statistics modal
+    function showEndGameStatistics(winner) {
+        // Create modal overlay
+        const overlay = document.createElement('div');
+        overlay.id = 'endgame-stats-overlay';
+        overlay.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.9);
+            z-index: 100000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            animation: fadeIn 0.3s ease-in;
+        `;
+        
+        // Create modal content
+        const modal = document.createElement('div');
+        modal.style.cssText = `
+            background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
+            padding: 40px;
+            border-radius: 20px;
+            max-width: 800px;
+            max-height: 90vh;
+            overflow-y: auto;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+            color: white;
+            font-family: Arial, sans-serif;
+            position: relative;
+        `;
+        
+        // Build statistics content
+        const allPlayers = Object.keys(window.gameState.players);
+        const totalDiceRolls = window.gameState.totalRolls;
+        const devCardsPurchased = window.gameState.devCardsPurchased;
+        const devCardsPlayed = window.gameState.devCardsPlayed;
+        
+        let statsHTML = `
+            <div style="text-align: center; margin-bottom: 30px;">
+                <h1 style="font-size: 42px; margin: 0; color: #f39c12;">🏆 Game Over! 🏆</h1>
+                <h2 style="font-size: 28px; margin: 10px 0; color: #3498db;">${winner} Wins!</h2>
+            </div>
+            
+            <div style="background: rgba(0,0,0,0.3); padding: 20px; border-radius: 10px; margin-bottom: 20px;">
+                <h3 style="margin-top: 0; color: #e74c3c;">📊 Game Statistics</h3>
+                
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px;">
+                    <div style="background: rgba(255,255,255,0.1); padding: 15px; border-radius: 8px;">
+                        <div style="font-size: 14px; color: #bdc3c7;">Total Dice Rolls</div>
+                        <div style="font-size: 32px; font-weight: bold; color: #3498db;">${totalDiceRolls}</div>
+                    </div>
+                    <div style="background: rgba(255,255,255,0.1); padding: 15px; border-radius: 8px;">
+                        <div style="font-size: 14px; color: #bdc3c7;">Players</div>
+                        <div style="font-size: 32px; font-weight: bold; color: #2ecc71;">${allPlayers.length}</div>
+                    </div>
+                </div>
+                
+                <h4 style="color: #9b59b6; margin-bottom: 10px;">Development Cards</h4>
+                <div style="background: rgba(155, 89, 182, 0.2); padding: 15px; border-radius: 8px; margin-bottom: 15px;">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 14px;">
+                        <div>Purchased: <strong>${devCardsPurchased}</strong></div>
+                        <div>Knights Played: <strong>${devCardsPlayed.knight}</strong></div>
+                        <div>Road Building: <strong>${devCardsPlayed.road_building}</strong></div>
+                        <div>Year of Plenty: <strong>${devCardsPlayed.year_of_plenty}</strong></div>
+                        <div>Monopoly: <strong>${devCardsPlayed.monopoly}</strong></div>
+                    </div>
+                </div>
+                
+                <h4 style="color: #e67e22; margin-bottom: 10px;">Player Sevens Rolled</h4>
+                <div style="background: rgba(230, 126, 34, 0.2); padding: 15px; border-radius: 8px;">
+        `;
+        
+        // Add player seven statistics
+        allPlayers.forEach(playerName => {
+            const player = window.gameState.players[playerName];
+            const playerSevens = window.gameState.sevenCounts[playerName] || 0;
+            const playerRolls = window.gameState.playerRollCounts[playerName] || 0;
+            const sevenPercent = playerRolls > 0 ? ((playerSevens / playerRolls) * 100).toFixed(1) : 0;
+            
+            statsHTML += `
+                <div style="display: flex; justify-content: space-between; padding: 5px 0; border-bottom: 1px solid rgba(255,255,255,0.1);">
+                    <span style="color: ${player.color}; font-weight: bold;">${playerName}</span>
+                    <span>${playerSevens} / ${playerRolls} rolls (${sevenPercent}%)</span>
+                </div>
+            `;
+        });
+        
+        statsHTML += `
+                </div>
+            </div>
+            
+            <div style="background: linear-gradient(135deg, #f39c12 0%, #e67e22 100%); padding: 25px; border-radius: 15px; text-align: center; margin-top: 30px; box-shadow: 0 5px 15px rgba(243, 156, 18, 0.3);">
+                <h3 style="margin: 0 0 15px 0; font-size: 24px;">❤️ Thank the Developer!</h3>
+                <p style="margin: 0 0 20px 0; font-size: 14px; color: rgba(255,255,255,0.9);">
+                    Enjoying CatanBuddy? Your support helps keep this extension free and improving!
+                </p>
+                <div style="display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
+                    <a href="https://paypal.me/blakeyoung81" target="_blank" 
+                       style="background: #00457C; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: bold; display: inline-flex; align-items: center; gap: 8px; transition: transform 0.2s;">
+                        💳 PayPal
+                    </a>
+                    <a href="https://venmo.com/u/ivytutor" target="_blank"
+                       style="background: #008CFF; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: bold; display: inline-flex; align-items: center; gap: 8px; transition: transform 0.2s;">
+                        📱 Venmo
+                    </a>
+                    <button disabled
+                            style="background: #999; color: white; padding: 12px 24px; border-radius: 8px; border: none; font-weight: bold; cursor: not-allowed; display: inline-flex; align-items: center; gap: 8px; opacity: 0.6;">
+                        ₿ Bitcoin (Coming Soon)
+                    </button>
+                </div>
+                <p style="margin: 15px 0 0 0; font-size: 12px; color: rgba(255,255,255,0.7);">
+                    Every contribution helps! Thank you for your support! 🙏
+                </p>
+            </div>
+            
+            <button id="close-stats-btn" style="
+                position: absolute;
+                top: 15px;
+                right: 15px;
+                background: rgba(231, 76, 60, 0.8);
+                color: white;
+                border: none;
+                border-radius: 50%;
+                width: 40px;
+                height: 40px;
+                font-size: 24px;
+                cursor: pointer;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                transition: background 0.2s;
+            ">×</button>
+        `;
+        
+        modal.innerHTML = statsHTML;
+        overlay.appendChild(modal);
+        
+        // Add close button functionality
+        const closeBtn = modal.querySelector('#close-stats-btn');
+        closeBtn.addEventListener('click', () => {
+            overlay.remove();
+        });
+        
+        // Close on overlay click
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) {
+                overlay.remove();
+            }
+        });
+        
+        // Add hover effects
+        const style = document.createElement('style');
+        style.textContent = `
+            @keyframes fadeIn {
+                from { opacity: 0; transform: scale(0.9); }
+                to { opacity: 1; transform: scale(1); }
+            }
+            #endgame-stats-overlay a:hover,
+            #endgame-stats-overlay button:hover {
+                transform: translateY(-2px);
+            }
+            #close-stats-btn:hover {
+                background: rgba(192, 57, 43, 1) !important;
+            }
+        `;
+        document.head.appendChild(style);
+        
+        document.body.appendChild(overlay);
+        console.log("[GAME WIN] End-game statistics displayed");
+    }
+    
+    // Function to detect game win
+    function parseGameWinAction(entry, messageSpan) {
+        try {
+            const text = messageSpan.textContent;
+            const trophyImg = messageSpan.querySelector('img[alt="trophy"]');
+            
+            if (trophyImg && text.includes('won the game!')) {
+                const playerSpan = messageSpan.querySelector('span[style*="color"]');
+                if (playerSpan) {
+                    const winner = playerSpan.textContent.trim();
+                    console.log(`[GAME WIN] ${winner} won the game!`);
+                    
+                    // Show end-game statistics modal
+                    setTimeout(() => showEndGameStatistics(winner), 1000);
+                    
+                    return true;
+                }
+            }
+            
+            return false;
+        } catch (error) {
+            console.error("Error parsing game win:", error);
+            return false;
+        }
+    }
+    
     // Advanced parsing functions for the specific HTML structure
     function parseGameAction(entry) {
         try {
@@ -1960,6 +2171,7 @@
             
             // Parse different types of actions
             const actions = [
+                parseGameWinAction, // Check for game win first
                 parseDiceRollAction,
                 parseResourceGainAction,
                 parseTradeAction,
@@ -2711,11 +2923,44 @@
             const text = messageSpan.textContent;
             console.log(`[CARD] Checking text: "${text}"`);
             
-            // Check for Road Building card - look for the specific image
+            // Check for development card images
             const roadBuildingImage = entry.querySelector('img[alt="Road Building"], img[src*="roadbuilding"]');
             const yearOfPlentyImage = entry.querySelector('img[alt="Year of Plenty"], img[src*="yearofplenty"]');
+            const knightImage = entry.querySelector('img[alt="Knight"], img[src*="knight"], img[alt="Soldier"], img[src*="soldier"]');
+            const monopolyImage = entry.querySelector('img[alt="Monopoly"], img[src*="monopoly"]');
             
-            if (text.includes('used') && roadBuildingImage) {
+            // Check for Knight card usage
+            if (text.includes('used') && (knightImage || text.includes('Knight') || text.includes('Soldier'))) {
+                console.log(`[CARD] Found Knight card usage`);
+                
+                const playerSpan = messageSpan.querySelector('span[style*="color"]');
+                if (playerSpan) {
+                    const playerName = playerSpan.textContent.trim();
+                    console.log(`[CARD] Player: ${playerName} used Knight`);
+                    
+                    window.gameState.addPlayer(playerName);
+                    
+                    // Track that a Knight card was played
+                    window.gameState.devCardsPlayed.knight++;
+                    console.log(`[DEV_CARD] Knight card played by ${playerName}. Total played: ${window.gameState.devCardsPlayed.knight}`);
+                    
+                    return true;
+                }
+            } else if (text.includes('used') && (monopolyImage || text.includes('Monopoly'))) {
+                // Detect Monopoly card usage (though the steal parser will handle the resource tracking)
+                console.log(`[CARD] Found Monopoly card usage`);
+                
+                const playerSpan = messageSpan.querySelector('span[style*="color"]');
+                if (playerSpan) {
+                    const playerName = playerSpan.textContent.trim();
+                    console.log(`[CARD] Player: ${playerName} used Monopoly`);
+                    
+                    // Note: Monopoly tracking happens in parseMonopolyAction when we see the steal message
+                    // This is just for logging consistency
+                    
+                    return true;
+                }
+            } else if (text.includes('used') && roadBuildingImage) {
                 console.log(`[CARD] Found Road Building card usage`);
                 
                 const playerSpan = messageSpan.querySelector('span[style*="color"]');
@@ -2834,21 +3079,9 @@
                     const playerName = playerSpan.textContent.trim();
                     console.log(`${playerName} moved the robber`);
                     
-                    // Check if this was due to a Knight card (not a rolled 7)
-                    // If the last dice roll wasn't a 7, this is likely a Knight card
-                    const recentDiceRoll = window.gameState.diceCounts[7] > 0; // Simple heuristic
-                    
-                    // For now, we'll assume Knight cards are used when robber is moved
-                    // A more sophisticated approach would track the sequence of events
-                    const isLikelyKnightCard = !text.toLowerCase().includes('seven') && 
-                                               !text.toLowerCase().includes('7') &&
-                                               !text.toLowerCase().includes('rolled');
-                    
-                    if (isLikelyKnightCard) {
-                        // Track that a Knight card was played
-                        window.gameState.devCardsPlayed.knight++;
-                        console.log(`[DEV_CARD] Knight card played by ${playerName}. Total played: ${window.gameState.devCardsPlayed.knight}`);
-                    }
+                    // NOTE: We don't track knight cards here anymore!
+                    // Knight card tracking now happens in parseCardUsageAction when we see "used Knight"
+                    // This function just logs that the robber was moved (could be from a 7 OR a knight card)
                     
                     return true;
                 }
