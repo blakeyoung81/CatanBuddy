@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CATAN Extension Test Page</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #fff;
+        }
+        .section {
+            background: #2a2a2a;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+        }
+        h1 { color: #4CAF50; }
+        h2 { color: #2196F3; }
+        .test-button {
+            background: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        .test-button:hover {
+            background: #45a049;
+        }
+        #output {
+            background: #000;
+            padding: 15px;
+            margin-top: 20px;
+            border-radius: 4px;
+            font-family: monospace;
+            white-space: pre-wrap;
+            min-height: 100px;
+        }
+        .success { color: #4CAF50; }
+        .error { color: #f44336; }
+        .info { color: #2196F3; }
+    </style>
+</head>
+<body>
+    <h1>🎲 CATAN Card Counter Extension Test</h1>
+    
+    <div class="section">
+        <h2>Quick Extension Check</h2>
+        <p>This page simulates parts of the Colonist.io DOM structure to test if your extension loads properly.</p>
+        <button class="test-button" onclick="runTests()">▶ Run All Tests</button>
+        <button class="test-button" onclick="clearOutput()">🗑️ Clear Output</button>
+    </div>
+
+    <div class="section">
+        <h2>Test Results</h2>
+        <div id="output">Click "Run All Tests" to begin...</div>
+    </div>
+
+    <div class="section">
+        <h2>Simulated Game Feed (for testing)</h2>
+        <div class="gameFeedsContainer-jBSxvDCV">
+            <div class="virtualScroller-lSkdkGJi" style="height: 300px;">
+                <div class="scrollItemContainer-WXX2rkzf">
+                    <div class="feedMessage-O8TLknGe">
+                        <span class="messagePart-XeUsOgLX">
+                            <span style="font-weight:600;color:#E27174">TestPlayer</span> rolled 
+                            <img src="data:image/svg+xml,..." alt="dice_6"> 
+                            <img src="data:image/svg+xml,..." alt="dice_5">
+                        </span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function log(message, type = 'info') {
+            const output = document.getElementById('output');
+            const timestamp = new Date().toLocaleTimeString();
+            const colorClass = type;
+            output.innerHTML += `<span class="${colorClass}">[${timestamp}] ${message}</span>\n`;
+        }
+
+        function clearOutput() {
+            document.getElementById('output').innerHTML = '';
+        }
+
+        function runTests() {
+            clearOutput();
+            log('═══════════════════════════════════════', 'info');
+            log('🧪 STARTING EXTENSION TESTS', 'info');
+            log('═══════════════════════════════════════', 'info');
+            log('');
+
+            // Test 1: Check if extension script is loaded
+            log('Test 1: Checking if extension loaded...', 'info');
+            setTimeout(() => {
+                if (typeof window.gameState !== 'undefined') {
+                    log('✅ PASS: Extension gameState object found!', 'success');
+                } else {
+                    log('❌ FAIL: Extension gameState object NOT found', 'error');
+                    log('   This means the extension is not loading properly', 'error');
+                }
+            }, 500);
+
+            // Test 2: Check if DOM elements are found
+            log('', 'info');
+            log('Test 2: Checking if extension can find game elements...', 'info');
+            setTimeout(() => {
+                const virtualScroller = document.querySelector('.virtualScroller-lSkdkGJi');
+                const feedMessages = document.querySelectorAll('.feedMessage-O8TLknGe');
+                
+                if (virtualScroller) {
+                    log('✅ PASS: Virtual scroller found!', 'success');
+                } else {
+                    log('❌ FAIL: Virtual scroller not found', 'error');
+                }
+                
+                if (feedMessages.length > 0) {
+                    log(`✅ PASS: Found ${feedMessages.length} feed message(s)`, 'success');
+                } else {
+                    log('❌ FAIL: No feed messages found', 'error');
+                }
+            }, 1000);
+
+            // Test 3: Check if tables are created
+            log('', 'info');
+            log('Test 3: Checking if extension created UI tables...', 'info');
+            setTimeout(() => {
+                const diceTable = document.getElementById('dice-table');
+                const resourceTable = document.getElementById('resource-table');
+                
+                if (diceTable) {
+                    log('✅ PASS: Dice statistics table created!', 'success');
+                } else {
+                    log('❌ FAIL: Dice table not created', 'error');
+                }
+                
+                if (resourceTable) {
+                    log('✅ PASS: Resource tracking table created!', 'success');
+                } else {
+                    log('❌ FAIL: Resource table not created', 'error');
+                }
+            }, 1500);
+
+            // Test 4: Check console for extension messages
+            log('', 'info');
+            log('Test 4: Check browser console for extension logs', 'info');
+            setTimeout(() => {
+                log('⚠️  INFO: Open DevTools Console (F12) and look for:', 'info');
+                log('   • "Colonist Card Counter extension loaded"', 'info');
+                log('   • "Initializing CATAN Card Counter extension"', 'info');
+                log('   • Any error messages in red', 'error');
+                log('', 'info');
+                log('═══════════════════════════════════════', 'info');
+                log('🏁 TESTS COMPLETE', 'success');
+                log('═══════════════════════════════════════', 'info');
+            }, 2000);
+        }
+
+        // Auto-run tests after 2 seconds
+        setTimeout(() => {
+            log('⏳ Extension has 2 seconds to load...', 'info');
+            setTimeout(runTests, 2000);
+        }, 100);
+    </script>
+</body>
+</html>
+
