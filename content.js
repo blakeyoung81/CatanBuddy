@@ -3406,10 +3406,8 @@
             console.log("Reset game state for reinitialization");
         }
         
-        // Initialize current player detection (with slight delay to ensure DOM is loaded)
-        setTimeout(() => {
-            window.gameState.initializeCurrentPlayer();
-        }, 500);
+        // Initialize current player detection
+        window.gameState.initializeCurrentPlayer();
         
         // Load table positions
         const positions = loadTablePositions();
@@ -3418,34 +3416,36 @@
         createDiceTable(positions.dice);
         createResourceTable(positions.resource);
         
-        // Setup observer
+        // Setup observer - if it fails, watch for the container to appear
         if (!setupObserver()) {
-            // If observer setup failed, retry periodically but silently until game starts
-            let retryCount = 0;
-            const maxRetries = 30; // More retries but longer intervals
+            console.log("Game not started yet, watching for game container...");
             
-            const retryInterval = setInterval(() => {
-                retryCount++;
-                
-                // Only log every 5 attempts to reduce console spam
-                if (retryCount % 5 === 0) {
-                    console.log(`[Observer] Still waiting for game to start... (${retryCount}/${maxRetries})`);
-                }
-                
-                const retryContainer = findGameLogContainer();
-                if (retryContainer) {
-                    console.log("✅ Game started! Found container on retry!");
+            // Use MutationObserver to watch for when the game container appears
+            const domObserver = new MutationObserver((mutations, observer) => {
+                const container = findGameLogContainer();
+                if (container) {
+                    console.log("✅ Game container detected!");
                     if (setupObserver()) {
-                        console.log("✅ Observer setup successful!");
-                        clearInterval(retryInterval);
+                        console.log("✅ Game log observer activated!");
+                        observer.disconnect(); // Stop watching once we've set up
                     }
                 }
+            });
             
-                if (retryCount >= maxRetries) {
-                    console.log("ℹ️ Extension waiting in background. Start or join a game to activate.");
-                    clearInterval(retryInterval);
+            // Watch the entire document body for changes
+            domObserver.observe(document.body, {
+                childList: true,
+                subtree: true
+            });
+            
+            // Also add a one-time check when the window loads (backup)
+            window.addEventListener('load', () => {
+                const container = findGameLogContainer();
+                if (container && setupObserver()) {
+                    console.log("✅ Game log observer activated on window load!");
+                    domObserver.disconnect();
                 }
-            }, 3000); // Check every 3 seconds
+            }, { once: true });
         }
         
         console.log("Extension initialization complete");
@@ -3492,17 +3492,13 @@
         }
     };
     
-    // Multiple initialization attempts with increasing delays for better DOM readiness
-if (document.readyState === 'loading') {
+    // Smart initialization - run when DOM is ready
+    if (document.readyState === 'loading') {
+        // DOM still loading, wait for it
         document.addEventListener('DOMContentLoaded', initializeExtension);
-            } else {
-        // Page already loaded
-        setTimeout(initializeExtension, 1000);
+    } else {
+        // DOM already loaded, run immediately
+        initializeExtension();
     }
-    
-    // Additional initialization attempts with longer delays
-    setTimeout(initializeExtension, 2000);
-    setTimeout(initializeExtension, 5000);  // Additional attempt
-    setTimeout(initializeExtension, 10000); // Final attempt for slow-loading games
     
 })();
