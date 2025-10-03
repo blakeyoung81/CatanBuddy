@@ -1741,34 +1741,17 @@
     // Function to find the game log container - updated for the specific HTML structure
     function findGameLogContainer() {
         try {
-            console.log("Searching for game feeds container...");
+            // Silently check for game feeds container (only log when found)
             
-            // More comprehensive DOM debugging
+            // Check for key DOM elements
             const allScrollers = document.querySelectorAll('[class*="virtualScroller"], [class*="Scroller"]');
             const feedMessages = document.querySelectorAll('.feedMessage-O8TLknGe');
             const gameFeedsContainers = document.querySelectorAll('[class*="gameFeedsContainer"]');
             const responsiveContainers = document.querySelectorAll('[class*="responsiveContainer"]');
             
-            console.log(`[DEBUG] DOM State Check:`);
-            console.log(`  - Scrollers: ${allScrollers.length}`);
-            console.log(`  - Feed messages: ${feedMessages.length}`);
-            console.log(`  - Game feeds containers: ${gameFeedsContainers.length}`);
-            console.log(`  - Responsive containers: ${responsiveContainers.length}`);
-            console.log(`  - Document ready state: ${document.readyState}`);
-            
-            // Log all found containers for debugging
-            if (gameFeedsContainers.length > 0) {
-                gameFeedsContainers.forEach((container, i) => {
-                    console.log(`  - GameFeedsContainer ${i}: ${container.className}`);
-                });
-            }
-            
-            if (allScrollers.length > 0) {
-                allScrollers.forEach((scroller, i) => {
-                    console.log(`  - Scroller ${i}: ${scroller.className}`);
-                    const messages = scroller.querySelectorAll('.feedMessage-O8TLknGe');
-                    console.log(`    Contains ${messages.length} feed messages`);
-                });
+            // Only log details when elements are actually found
+            if (gameFeedsContainers.length > 0 || allScrollers.length > 0) {
+                console.log(`[DEBUG] Found: ${allScrollers.length} scrollers, ${feedMessages.length} messages, ${gameFeedsContainers.length} containers`);
             }
             
             // Method 1: Look for the specific game feeds container structure
@@ -1864,7 +1847,6 @@
             
             // Method 9: Try to wait a bit and search again (only if we have feedMessages but no container)
             if (feedMessages.length > 0) {
-                console.log(`[DEBUG] Found ${feedMessages.length} feed messages but no container, searching parent hierarchy...`);
                 // Try every parent of every feed message
                 for (const message of feedMessages) {
                     let parent = message.parentElement;
@@ -1882,7 +1864,7 @@
                 }
             }
             
-            console.log("❌ No game log container found with any method");
+            // No container found - silently return null (normal before game starts)
             return null;
                                 } catch (error) {
             console.error("Error finding game log container:", error);
@@ -3438,44 +3420,32 @@
         
         // Setup observer
         if (!setupObserver()) {
-            // If observer setup failed, retry periodically with better debugging and longer intervals
+            // If observer setup failed, retry periodically but silently until game starts
             let retryCount = 0;
-            const maxRetries = 15; // Increased retries
+            const maxRetries = 30; // More retries but longer intervals
             
             const retryInterval = setInterval(() => {
                 retryCount++;
-                console.log(`Retrying observer setup... (attempt ${retryCount}/${maxRetries})`);
                 
-                // Wait a bit longer for DOM to stabilize
-                setTimeout(() => {
-                    const retryContainer = findGameLogContainer();
-                    if (retryContainer) {
-                        console.log("✅ Found container on retry!");
-                if (setupObserver()) {
-                            console.log("✅ Observer setup successful on retry!");
-                    clearInterval(retryInterval);
+                // Only log every 5 attempts to reduce console spam
+                if (retryCount % 5 === 0) {
+                    console.log(`[Observer] Still waiting for game to start... (${retryCount}/${maxRetries})`);
                 }
-                    } else {
-                        console.log("❌ Still no container found");
+                
+                const retryContainer = findGameLogContainer();
+                if (retryContainer) {
+                    console.log("✅ Game started! Found container on retry!");
+                    if (setupObserver()) {
+                        console.log("✅ Observer setup successful!");
+                        clearInterval(retryInterval);
                     }
-                }, 500); // Small delay within each retry
+                }
             
                 if (retryCount >= maxRetries) {
-                    console.log("❌ Max retries reached");
-                    console.log("💡 Try running debugCatanExtension() in console for manual troubleshooting");
-                    
-                    // Try one final aggressive attempt
-            setTimeout(() => {
-                        console.log("🔄 Final aggressive attempt...");
-                        const finalContainer = findGameLogContainer();
-                        if (finalContainer && setupObserver()) {
-                            console.log("✅ Final attempt successful!");
-                        }
-                    }, 2000);
-                    
-                clearInterval(retryInterval);
+                    console.log("ℹ️ Extension waiting in background. Start or join a game to activate.");
+                    clearInterval(retryInterval);
                 }
-            }, 4000); // Increased interval time
+            }, 3000); // Check every 3 seconds
         }
         
         console.log("Extension initialization complete");
