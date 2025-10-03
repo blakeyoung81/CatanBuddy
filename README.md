@@ -20,11 +20,16 @@ A Chrome extension that provides real-time resource tracking for Colonist.io gam
 
 ## Installation
 
+**📖 See [INSTALL.md](INSTALL.md) for detailed installation instructions and troubleshooting.**
+
+Quick start:
 1. Download or clone this repository
 2. Open Chrome and navigate to `chrome://extensions/`
 3. Enable "Developer mode" in the top right
 4. Click "Load unpacked" and select the project folder
-5. The extension will be active on Colonist.io
+5. Go to Colonist.io and start a game!
+
+**🧪 Testing:** Open `test-extension.html` in your browser to verify the extension is working.
 
 ## How It Works
 
@@ -39,6 +44,7 @@ The extension monitors the game log in real-time and parses various game events 
 
 ## Version History
 
+- **v1.4.0** (2025-10-03): Reduced console spam, improved game detection timing, added test page and installation guide
 - **v1.3.3**: Enhanced 1v1 support, improved parsing
 - **v1.3.2**: Create tables immediately, track when available
 - **v1.3.1**: Advanced probabilistic state tracking
