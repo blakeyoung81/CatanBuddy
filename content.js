@@ -555,46 +555,66 @@
         
         // Helper function to determine the extension user (who "You" refers to)
         getExtensionUser: function() {
-            // If already cached, return it
-            if (this.extensionUser && typeof this.extensionUser === 'string' && this.extensionUser.length > 1) {
+            // If already cached AND valid, return it
+            if (this.extensionUser && 
+                typeof this.extensionUser === 'string' && 
+                this.extensionUser.length > 1 && 
+                isNaN(this.extensionUser)) {
                 return this.extensionUser;
             }
             
-            // Method 1: Check tracked players first - most reliable since it's from actual gameplay
-            const trackedPlayers = Object.keys(this.players);
-            if (trackedPlayers.length > 0) {
-                // Find the player that's YOU - usually the one you see resource gains for
-                // In the game log, look for players that appear frequently
-                const blakeYoung = trackedPlayers.find(name => name.toLowerCase().includes('blakeyoung'));
-                if (blakeYoung) {
-                    this.extensionUser = blakeYoung;
-                    console.log(`[USER] Found extension user from tracked players: ${this.extensionUser}`);
+            // PRIORITY 1: Try to get username from the header profile element (most reliable!)
+            const headerUsernameElement = document.getElementById('header_profile_username');
+            if (headerUsernameElement) {
+                const username = headerUsernameElement.textContent.trim();
+                if (username && username.length > 1 && isNaN(username)) {
+                    this.extensionUser = username;
+                    console.log(`[USER] ✅ Found extension user from header ID: ${this.extensionUser}`);
                     return this.extensionUser;
                 }
             }
             
-            // Method 2: Try to get username from the header profile element
-            const headerUsernameElement = document.getElementById('header_profile_username');
-            if (headerUsernameElement && headerUsernameElement.textContent.trim()) {
-                this.extensionUser = headerUsernameElement.textContent.trim();
-                console.log(`[USER] Found extension user from header: ${this.extensionUser}`);
-                return this.extensionUser;
-            }
-            
-            // Method 3: Alternative selector for the header username
+            // PRIORITY 2: Alternative selector for the header username
             const headerUsernameElement2 = document.querySelector('.header_profile_username');
-            if (headerUsernameElement2 && headerUsernameElement2.textContent.trim()) {
-                this.extensionUser = headerUsernameElement2.textContent.trim();
-                console.log(`[USER] Found extension user from header (alt selector): ${this.extensionUser}`);
-                return this.extensionUser;
+            if (headerUsernameElement2) {
+                const username = headerUsernameElement2.textContent.trim();
+                if (username && username.length > 1 && isNaN(username)) {
+                    this.extensionUser = username;
+                    console.log(`[USER] ✅ Found extension user from header class: ${this.extensionUser}`);
+                    return this.extensionUser;
+                }
             }
             
-            // Method 4: Look for username in any profile-related elements
+            // PRIORITY 3: Check tracked players (fallback if header not available)
+            const trackedPlayers = Object.keys(this.players);
+            if (trackedPlayers.length > 0) {
+                // Find player whose name matches what we might have cached
+                for (const playerName of trackedPlayers) {
+                    // Valid player name check
+                    if (playerName && 
+                        typeof playerName === 'string' && 
+                        playerName.length > 1 && 
+                        isNaN(playerName) && 
+                        !playerName.match(/^\d+$/)) {
+                        
+                        this.extensionUser = playerName;
+                        console.log(`[USER] Found extension user from tracked players: ${this.extensionUser}`);
+                        return this.extensionUser;
+                    }
+                }
+            }
+            
+            // PRIORITY 4: Look for username in any profile-related elements (broad search)
             const profileElements = document.querySelectorAll('[class*="username"], [class*="profile"], [id*="username"], [id*="profile"]');
             for (const element of profileElements) {
                 const text = element.textContent.trim();
                 // Must be a valid username (no spaces, reasonable length, not a number)
-                if (text && text.length > 1 && text.length < 50 && !text.includes(' ') && isNaN(text)) {
+                if (text && 
+                    text.length > 1 && 
+                    text.length < 50 && 
+                    !text.includes(' ') && 
+                    isNaN(text) && 
+                    !text.match(/^\d+$/)) {
                     this.extensionUser = text;
                     console.log(`[USER] Found extension user from profile element: ${this.extensionUser}`);
                     return this.extensionUser;
@@ -602,8 +622,9 @@
             }
             
             // Emergency fallback - should never reach here
-            console.warn(`[USER] ⚠️ Failed to detect extension user, using fallback!`);
-            this.extensionUser = "BlakeYoung";
+            console.error(`[USER] ❌ FAILED to detect extension user! Falling back to placeholder.`);
+            console.error(`[USER] Debug info: Header element exists? ${!!headerUsernameElement}, Tracked players: ${trackedPlayers.length}`);
+            this.extensionUser = "UNKNOWN_USER";
             
             return this.extensionUser;
         },
