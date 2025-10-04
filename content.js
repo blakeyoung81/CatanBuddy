@@ -555,11 +555,25 @@
         
         // Helper function to determine the extension user (who "You" refers to)
         getExtensionUser: function() {
-            if (this.extensionUser) {
+            // If already cached, return it
+            if (this.extensionUser && typeof this.extensionUser === 'string' && this.extensionUser.length > 1) {
                 return this.extensionUser;
             }
             
-            // Method 1: Try to get username from the header profile element (most reliable)
+            // Method 1: Check tracked players first - most reliable since it's from actual gameplay
+            const trackedPlayers = Object.keys(this.players);
+            if (trackedPlayers.length > 0) {
+                // Find the player that's YOU - usually the one you see resource gains for
+                // In the game log, look for players that appear frequently
+                const blakeYoung = trackedPlayers.find(name => name.toLowerCase().includes('blakeyoung'));
+                if (blakeYoung) {
+                    this.extensionUser = blakeYoung;
+                    console.log(`[USER] Found extension user from tracked players: ${this.extensionUser}`);
+                    return this.extensionUser;
+                }
+            }
+            
+            // Method 2: Try to get username from the header profile element
             const headerUsernameElement = document.getElementById('header_profile_username');
             if (headerUsernameElement && headerUsernameElement.textContent.trim()) {
                 this.extensionUser = headerUsernameElement.textContent.trim();
@@ -567,7 +581,7 @@
                 return this.extensionUser;
             }
             
-            // Method 2: Alternative selector for the header username
+            // Method 3: Alternative selector for the header username
             const headerUsernameElement2 = document.querySelector('.header_profile_username');
             if (headerUsernameElement2 && headerUsernameElement2.textContent.trim()) {
                 this.extensionUser = headerUsernameElement2.textContent.trim();
@@ -575,44 +589,21 @@
                 return this.extensionUser;
             }
             
-            // Method 3: Look for username in any profile-related elements
+            // Method 4: Look for username in any profile-related elements
             const profileElements = document.querySelectorAll('[class*="username"], [class*="profile"], [id*="username"], [id*="profile"]');
-            // Blacklist of common UI words that are NOT usernames
-            const blacklist = ['notifications', 'settings', 'profile', 'logout', 'login', 'account', 'menu', 'home', 'help'];
-            
             for (const element of profileElements) {
                 const text = element.textContent.trim();
-                const lowerText = text.toLowerCase();
-                
-                // Ensure the username is valid:
-                // - Not just a number
-                // - No spaces
-                // - Not empty
-                // - Reasonable length
-                // - Not a blacklisted UI word
-                if (text && 
-                    text.length > 0 && 
-                    text.length < 50 && 
-                    !text.includes(' ') && 
-                    !/^\d+$/.test(text) &&
-                    !blacklist.includes(lowerText)) {
+                // Must be a valid username (no spaces, reasonable length, not a number)
+                if (text && text.length > 1 && text.length < 50 && !text.includes(' ') && isNaN(text)) {
                     this.extensionUser = text;
                     console.log(`[USER] Found extension user from profile element: ${this.extensionUser}`);
                     return this.extensionUser;
                 }
             }
             
-            // Fallback: Try to find BlakeYoung in tracked players (legacy support)
-            const blakeYoung = Object.keys(this.players).find(name => name.includes('BlakeYoung'));
-            if (blakeYoung) {
-                this.extensionUser = blakeYoung;
-                console.log(`[USER] Using tracked BlakeYoung as fallback: ${this.extensionUser}`);
-                return this.extensionUser;
-            }
-            
-            // Ultimate fallback
+            // Emergency fallback - should never reach here
+            console.warn(`[USER] ⚠️ Failed to detect extension user, using fallback!`);
             this.extensionUser = "BlakeYoung";
-            console.log(`[USER] Using hardcoded fallback: ${this.extensionUser}`);
             
             return this.extensionUser;
         },
@@ -791,36 +782,24 @@
         },
         
         updatePossibleStates: function(action) {
-            const previousStates = this.possibleStates; // Keep a copy of states before the action
             const newStates = [];
             
-            for (const state of previousStates) {
+            for (const state of this.possibleStates) {
                 const possibleNewStates = this.applyActionToState(state, action);
                 newStates.push(...possibleNewStates);
             }
             
             this.possibleStates = newStates;
+            console.log(`After action ${action.type}, we have ${this.possibleStates.length} possible states`);
             
-            // If all states were eliminated, it means a discrepancy between our state and the game log.
-            // We'll trust the game log and force the action to reconcile.
-            if (this.possibleStates.length === 0 && previousStates.length > 0) {
-                console.warn(`[STATE_FIX] Discrepancy detected for action:`, action);
-                console.warn(`[STATE_FIX] Forcing action to match game log, as it's the source of truth.`);
-                
-                // Use the first of the previous states as the baseline for recovery
-                const recoveryState = JSON.parse(JSON.stringify(previousStates[0]));
-                
-                // Force the action, ignoring affordability checks
-                const fixedStates = this.applyActionToState(recoveryState, action, true);
-                
-                this.possibleStates = fixedStates;
-                console.log(`[STATE_FIX] ✅ State reconciled. Now have ${this.possibleStates.length} state(s).`);
-            } else {
-                console.log(`After action ${action.type}, we have ${this.possibleStates.length} possible states`);
+            // Check for impossible state and attempt to fix
+            if (this.possibleStates.length === 0) {
+                console.warn(`[WARN] Impossible state detected! Attempting to fix...`);
+                this.fixImpossibleState();
             }
         },
         
-        applyActionToState: function(state, action, force = false) {
+        applyActionToState: function(state, action) {
             const newStates = [];
             
             switch (action.type) {
@@ -847,18 +826,18 @@
                     }
                     
                     // Only keep states where player has enough resources
-                    if (force || this.playerCanAfford(spentState[action.player], action.cost)) {
+                    if (this.playerCanAfford(spentState[action.player], action.cost)) {
                         for (const [resource, amount] of Object.entries(action.cost)) {
                             spentState[action.player][resource] -= amount;
-                            // When forcing, clamp to 0 if resources go negative
-                            if (force && spentState[action.player][resource] < 0) {
-                                console.log(`[STATE_FIX] Player ${action.player} had insufficient ${resource}, setting to 0 after spend.`);
+                            // Ensure we don't go negative
+                            if (spentState[action.player][resource] < 0) {
                                 spentState[action.player][resource] = 0;
                             }
                         }
                         newStates.push(spentState);
                     } else {
-                        // This state is eliminated if the player can't afford the action (and not forcing)
+                        console.log(`[WARN] ${action.player} cannot afford ${JSON.stringify(action.cost)}`);
+                        // If player can't afford it, this state is eliminated
                     }
                     break;
                     
@@ -899,34 +878,61 @@
                     
                     // Ensure both players exist in state
                     const complexTradeState = JSON.parse(JSON.stringify(state));
-                    if (!complexTradeState[action.trader]) complexTradeState[action.trader] = { lumber: 0, brick: 0, wool: 0, grain: 0, ore: 0 };
-                    if (!complexTradeState[action.partner]) complexTradeState[action.partner] = { lumber: 0, brick: 0, wool: 0, grain: 0, ore: 0 };
+                    if (!complexTradeState[action.trader]) {
+                        complexTradeState[action.trader] = { lumber: 0, brick: 0, wool: 0, grain: 0, ore: 0 };
+                    }
+                    if (!complexTradeState[action.partner]) {
+                        complexTradeState[action.partner] = { lumber: 0, brick: 0, wool: 0, grain: 0, ore: 0 };
+                    }
                     
-                    const traderCanAfford = this.playerCanAfford(complexTradeState[action.trader], action.traderGave);
-                    const partnerCanAfford = this.playerCanAfford(complexTradeState[action.partner], action.traderReceived);
+                    // Check if trader has all resources they're giving away
+                    let traderCanAfford = true;
+                    for (const [resource, amount] of Object.entries(action.traderGave)) {
+                        if (complexTradeState[action.trader][resource] < amount) {
+                            traderCanAfford = false;
+                            break;
+                        }
+                    }
                     
-                    if (force || (traderCanAfford && partnerCanAfford)) {
+                    // Check if partner has all resources they're giving away (what trader receives)
+                    let partnerCanAfford = true;
+                    for (const [resource, amount] of Object.entries(action.traderReceived)) {
+                        if (complexTradeState[action.partner][resource] < amount) {
+                            partnerCanAfford = false;
+                            break;
+                        }
+                    }
+                    
+                    console.log(`[STATE] Before complex trade - ${action.trader}:`, complexTradeState[action.trader]);
+                    console.log(`[STATE] Before complex trade - ${action.partner}:`, complexTradeState[action.partner]);
+                    console.log(`[STATE] Trader can afford? ${traderCanAfford}, Partner can afford? ${partnerCanAfford}`);
+                    
+                    if (traderCanAfford && partnerCanAfford) {
                         // Trader loses what they gave
                         for (const [resource, amount] of Object.entries(action.traderGave)) {
                             complexTradeState[action.trader][resource] -= amount;
-                            if (force && complexTradeState[action.trader][resource] < 0) complexTradeState[action.trader][resource] = 0;
                         }
                         // Trader gains what they received
                         for (const [resource, amount] of Object.entries(action.traderReceived)) {
                             complexTradeState[action.trader][resource] += amount;
                         }
                         
-                        // Partner loses what they gave
+                        // Partner loses what they gave (what trader received)
                         for (const [resource, amount] of Object.entries(action.traderReceived)) {
                             complexTradeState[action.partner][resource] -= amount;
-                            if (force && complexTradeState[action.partner][resource] < 0) complexTradeState[action.partner][resource] = 0;
                         }
-                        // Partner gains what they received
+                        // Partner gains what they received (what trader gave)
                         for (const [resource, amount] of Object.entries(action.traderGave)) {
                             complexTradeState[action.partner][resource] += amount;
                         }
                         
+                        console.log(`[STATE] COMPLEX TRADE PROCESSED`);
+                        console.log(`[STATE] After complex trade - ${action.trader}:`, complexTradeState[action.trader]);
+                        console.log(`[STATE] After complex trade - ${action.partner}:`, complexTradeState[action.partner]);
                         newStates.push(complexTradeState);
+        } else {
+                        console.log(`[STATE] COMPLEX TRADE ELIMINATED STATE - trader can afford? ${traderCanAfford}, partner can afford? ${partnerCanAfford}`);
+                        // This state is eliminated because the trade is impossible
                     }
                     break;
                     
@@ -936,19 +942,39 @@
                     
                     // Ensure player exists in state
                     const bankNewState = JSON.parse(JSON.stringify(state));
-                    if (!bankNewState[action.player]) bankNewState[action.player] = { lumber: 0, brick: 0, wool: 0, grain: 0, ore: 0 };
+                    if (!bankNewState[action.player]) {
+                        bankNewState[action.player] = { lumber: 0, brick: 0, wool: 0, grain: 0, ore: 0 };
+                    }
                     
-                    if (force || this.playerCanAfford(bankNewState[action.player], action.gave)) {
-                        // Remove resources given
+                        // Check if player has all the resources they're giving to bank
+                        let canAfford = true;
                         for (const [resource, amount] of Object.entries(action.gave)) {
+                        if (bankNewState[action.player][resource] < amount) {
+                                canAfford = false;
+                                break;
+                            }
+                        }
+                        
+                        console.log(`[STATE] Player can afford bank trade? ${canAfford}`);
+                        
+                        if (canAfford) {
+                            // Remove resources given to bank
+                            for (const [resource, amount] of Object.entries(action.gave)) {
                             bankNewState[action.player][resource] -= amount;
-                            if (force && bankNewState[action.player][resource] < 0) bankNewState[action.player][resource] = 0;
-                        }
-                        // Add resources received
-                        for (const [resource, amount] of Object.entries(action.received)) {
+                            }
+                            
+                            // Add resources received from bank
+                            for (const [resource, amount] of Object.entries(action.received)) {
                             bankNewState[action.player][resource] += amount;
-                        }
+                            }
+                            
+                            console.log(`[STATE] BANK TRADE PROCESSED: ${action.player}`);
+                        console.log(`[STATE] Before bank trade:`, state[action.player] || 'null');
+                        console.log(`[STATE] After bank trade:`, bankNewState[action.player]);
                         newStates.push(bankNewState);
+                        } else {
+                            console.log(`[STATE] BANK TRADE ELIMINATED STATE - player cannot afford trade`);
+                            // This state is eliminated because the player can't afford the trade
                     }
                     break;
                     
@@ -994,19 +1020,24 @@
                     
                     // Ensure both players exist in state
                     const specificRobberyState = JSON.parse(JSON.stringify(state));
-                    if (!specificRobberyState[action.victim]) specificRobberyState[action.victim] = { lumber: 0, brick: 0, wool: 0, grain: 0, ore: 0 };
-                    if (!specificRobberyState[action.robber]) specificRobberyState[action.robber] = { lumber: 0, brick: 0, wool: 0, grain: 0, ore: 0 };
-                    
-                    if (force || specificRobberyState[action.victim][action.resource] > 0) {
-                        specificRobberyState[action.victim][action.resource] -= 1;
-                        // Clamp to 0 if forcing on a player who we thought had none
-                        if (force && specificRobberyState[action.victim][action.resource] < 0) {
-                            console.log(`[STATE_FIX] Victim ${action.victim} was stolen from but had 0 ${action.resource}. Correcting state.`);
-                            specificRobberyState[action.victim][action.resource] = 0;
-                        }
-                        specificRobberyState[action.robber][action.resource] += 1;
-                        newStates.push(specificRobberyState);
+                    if (!specificRobberyState[action.victim]) {
+                        specificRobberyState[action.victim] = { lumber: 0, brick: 0, wool: 0, grain: 0, ore: 0 };
                     }
+                    if (!specificRobberyState[action.robber]) {
+                        specificRobberyState[action.robber] = { lumber: 0, brick: 0, wool: 0, grain: 0, ore: 0 };
+                    }
+                    
+                    if (specificRobberyState[action.victim][action.resource] > 0) {
+                        specificRobberyState[action.victim][action.resource] -= 1;
+                        specificRobberyState[action.robber][action.resource] += 1;
+                            console.log(`[STATE] SPECIFIC ROBBERY PROCESSED`);
+                        console.log(`[STATE] After robbery - ${action.victim}:`, specificRobberyState[action.victim]);
+                        console.log(`[STATE] After robbery - ${action.robber}:`, specificRobberyState[action.robber]);
+                        newStates.push(specificRobberyState);
+                        } else {
+                            console.log(`[STATE] SPECIFIC ROBBERY ELIMINATED STATE - victim doesn't have ${action.resource}`);
+                            // This state is eliminated because victim doesn't have the specific resource
+                        }
                     break;
                     
                 case 'monopoly':
