@@ -1,8 +1,44 @@
 (() => {
     "use strict";
     
+    // Enhanced error logging system
+    const ExtensionLogger = {
+        prefix: '[CATAN-EXT]',
+        version: '1.4.3',
+        
+        error: function(context, message, data = null) {
+            console.error(`${this.prefix} ❌ ERROR [${context}]:`, message);
+            if (data) console.error(`${this.prefix}    Data:`, data);
+            console.trace(); // Show stack trace
+        },
+        
+        warn: function(context, message, data = null) {
+            console.warn(`${this.prefix} ⚠️  WARNING [${context}]:`, message);
+            if (data) console.warn(`${this.prefix}    Data:`, data);
+        },
+        
+        info: function(context, message, data = null) {
+            console.log(`${this.prefix} ℹ️  [${context}]:`, message);
+            if (data) console.log(`${this.prefix}    Data:`, data);
+        },
+        
+        success: function(context, message, data = null) {
+            console.log(`${this.prefix} ✅ [${context}]:`, message);
+            if (data) console.log(`${this.prefix}    Data:`, data);
+        },
+        
+        debug: function(context, message, data = null) {
+            console.log(`${this.prefix} 🔍 DEBUG [${context}]:`, message);
+            if (data) console.log(`${this.prefix}    Data:`, data);
+        }
+    };
+    
+    // Make logger available globally for debugging
+    window.ExtensionLogger = ExtensionLogger;
+    
     console.log("Colonist Card Counter extension loaded");
-    console.log("Version 1.4.22 - 1v1 Mode Debugging: Enhanced resource parsing with detailed 1v1 debug logs, parser tracking, HTML inspection for troubleshooting");
+    console.log("Version 1.4.3 - Enhanced error logging and username detection");
+    ExtensionLogger.info('INIT', 'Extension initialized with enhanced error tracking');
     
     // Advanced game state tracking system
     window.gameState = {
@@ -63,7 +99,7 @@
             try {
                 const table = document.getElementById('dice-table');
                 if (!table) {
-                    console.log("Dice table not found, can't update counts");
+                    ExtensionLogger.warn('DICE_TABLE', 'Table element not found in DOM');
                     return;
                 }
                 
@@ -116,7 +152,7 @@
                 // Update development card table
                 this.updateDevCardTable();
             } catch (error) {
-                console.error("Error updating dice table:", error);
+                ExtensionLogger.error('DICE_TABLE', 'Failed to update dice statistics', { error: error.message, stack: error.stack });
             }
         },
         
@@ -258,7 +294,8 @@
             try {
                 const turnTbody = document.getElementById('turn-order-tbody');
                 if (!turnTbody) {
-                    return; // Table not created yet
+                    ExtensionLogger.debug('TURN_TABLE', 'Turn order table not ready yet');
+                    return;
                 }
                 
                 // Clear existing rows
@@ -333,7 +370,7 @@
                     turnTbody.appendChild(row);
                 });
             } catch (error) {
-                console.error("Error updating turn order table:", error);
+                ExtensionLogger.error('TURN_TABLE', 'Failed to update turn order', { error: error.message, stack: error.stack });
             }
         },
 
@@ -425,7 +462,7 @@
                 devCardTbody.appendChild(summaryRow);
                 
             } catch (error) {
-                console.error("Error updating development card table:", error);
+                ExtensionLogger.error('DEV_CARD_TABLE', 'Failed to update development card probabilities', { error: error.message, stack: error.stack });
             }
         },
         
@@ -495,7 +532,12 @@
                     }, 500);
                 }
             } catch (error) {
-                console.error("Error updating resource count:", error);
+                ExtensionLogger.error('RESOURCE_UPDATE', 'Failed to update resource count', { 
+                    player: playerName, 
+                    resource: resource, 
+                    amount: amount,
+                    error: error.message 
+                });
             }
         },
         
@@ -622,8 +664,14 @@
             }
             
             // Emergency fallback - should never reach here
-            console.error(`[USER] ❌ FAILED to detect extension user! Falling back to placeholder.`);
-            console.error(`[USER] Debug info: Header element exists? ${!!headerUsernameElement}, Tracked players: ${trackedPlayers.length}`);
+            ExtensionLogger.error('USER_DETECTION', 'Failed to detect extension user!', {
+                headerElementExists: !!headerUsernameElement,
+                headerElement2Exists: !!headerUsernameElement2,
+                trackedPlayersCount: trackedPlayers.length,
+                trackedPlayers: trackedPlayers,
+                profileElementsCount: profileElements.length,
+                url: window.location.href
+            });
             this.extensionUser = "UNKNOWN_USER";
             
             return this.extensionUser;
@@ -1158,7 +1206,11 @@
         
         
         fixImpossibleState: function() {
-            console.log(`[FIX] Attempting to fix impossible state by resetting to simple tracking`);
+            ExtensionLogger.warn('STATE_FIX', 'Impossible state detected, resetting to simple tracking', {
+                previousStateCount: this.possibleStates.length,
+                confirmedActionsCount: this.confirmedActions.length,
+                lastActions: this.confirmedActions.slice(-5)
+            });
             
             // When we have an impossible state, fall back to simple resource tracking
             // Create a new state based on the players object
@@ -1174,7 +1226,7 @@
             }
             
             this.possibleStates = [newState];
-            console.log(`[FIX] Reset to single state:`, newState);
+            ExtensionLogger.info('STATE_FIX', 'Reset complete', { newState: newState });
         },
         
         getResourceRange: function(player, resource) {
@@ -1579,10 +1631,14 @@
             // Make draggable
             makeDraggable(container, 'diceTablePosition');
             
-            document.body.appendChild(container);
-            console.log("Dice table created successfully");
-                                } catch (error) {
-            console.error("Error creating dice table:", error);
+            document.body.appendChild(container);            
+            ExtensionLogger.success('CREATE_TABLE', 'Dice statistics table created successfully');
+        } catch (error) {
+            ExtensionLogger.error('CREATE_TABLE', 'Failed to create dice statistics table', {
+                error: error.message,
+                position: position,
+                stack: error.stack
+            });
         }
     }
     
@@ -1699,10 +1755,14 @@
             // Make draggable
             makeDraggable(container, 'resourceTablePosition');
             
-            document.body.appendChild(container);
-            console.log("Resource table created successfully");
+            document.body.appendChild(container);            
+            ExtensionLogger.success('CREATE_TABLE', 'Resource tracking table created successfully');
         } catch (error) {
-            console.error("Error creating resource table:", error);
+            ExtensionLogger.error('CREATE_TABLE', 'Failed to create resource tracking table', {
+                error: error.message,
+                position: position,
+                stack: error.stack
+            });
         }
     }
     
@@ -1894,8 +1954,11 @@
             
             // No container found - silently return null (normal before game starts)
             return null;
-                                } catch (error) {
-            console.error("Error finding game log container:", error);
+        } catch (error) {
+            ExtensionLogger.error('FIND_CONTAINER', 'Error while searching for game log container', {
+                error: error.message,
+                stack: error.stack
+            });
             return null;
         }
     }
@@ -2216,7 +2279,12 @@
             console.log(`No parser matched: ${text.substring(0, 60)}...`);
             return false;
         } catch (error) {
-            console.error("Error parsing game action:", error);
+            ExtensionLogger.error('PARSE_ACTION', 'Failed to parse game action', {
+                error: error.message,
+                entryHTML: entry?.outerHTML?.substring(0, 200),
+                messageText: messageSpan?.textContent?.substring(0, 100),
+                stack: error.stack
+            });
             return false;
         }
     }
@@ -2277,7 +2345,11 @@
             }
             return false;
         } catch (error) {
-            console.error("Error parsing dice roll:", error);
+            ExtensionLogger.error('PARSE_DICE', 'Failed to parse dice roll action', {
+                error: error.message,
+                messageText: messageSpan?.textContent,
+                stack: error.stack
+            });
             return false;
         }
     }
@@ -3446,37 +3518,47 @@
         
         // Setup observer - if it fails, watch for the container to appear
         if (!setupObserver()) {
-            console.log("Game not started yet, watching for game container...");
+            ExtensionLogger.info('INIT', 'Game not started yet, watching for game container to appear...');
             
             // Use MutationObserver to watch for when the game container appears
             const domObserver = new MutationObserver((mutations, observer) => {
                 const container = findGameLogContainer();
                 if (container) {
-                    console.log("✅ Game container detected!");
+                    ExtensionLogger.success('INIT', 'Game container appeared in DOM!');
                     if (setupObserver()) {
-                        console.log("✅ Game log observer activated!");
+                        ExtensionLogger.success('INIT', 'Game log observer activated!');
                         observer.disconnect(); // Stop watching once we've set up
+                    } else {
+                        ExtensionLogger.error('INIT', 'Found container but failed to setup observer');
                     }
                 }
             });
             
             // Watch the entire document body for changes
-            domObserver.observe(document.body, {
-                childList: true,
-                subtree: true
-            });
+            try {
+                domObserver.observe(document.body, {
+                    childList: true,
+                    subtree: true
+                });
+                ExtensionLogger.debug('INIT', 'DOM observer watching for game container...');
+            } catch (error) {
+                ExtensionLogger.error('INIT', 'Failed to set up DOM observer', {
+                    error: error.message,
+                    stack: error.stack
+                });
+            }
             
             // Also add a one-time check when the window loads (backup)
             window.addEventListener('load', () => {
                 const container = findGameLogContainer();
                 if (container && setupObserver()) {
-                    console.log("✅ Game log observer activated on window load!");
+                    ExtensionLogger.success('INIT', 'Game log observer activated on window load!');
                     domObserver.disconnect();
                 }
             }, { once: true });
         }
         
-        console.log("Extension initialization complete");
+        ExtensionLogger.success('INIT', 'Extension initialization complete');
     }
     
     // Add global debug function for 1v1 troubleshooting
