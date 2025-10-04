@@ -577,14 +577,25 @@
             
             // Method 3: Look for username in any profile-related elements
             const profileElements = document.querySelectorAll('[class*="username"], [class*="profile"], [id*="username"], [id*="profile"]');
-            const userBlacklist = ['profile', 'notifications', 'settings', 'logout', 'login', 'shop', 'player'];
-
+            // Blacklist of common UI words that are NOT usernames
+            const blacklist = ['notifications', 'settings', 'profile', 'logout', 'login', 'account', 'menu', 'home', 'help'];
+            
             for (const element of profileElements) {
                 const text = element.textContent.trim();
-                const textLower = text.toLowerCase();
+                const lowerText = text.toLowerCase();
                 
-                // Ensure the username is not a blacklisted word, not just a number, etc.
-                if (text && !userBlacklist.includes(textLower) && text.length > 0 && text.length < 50 && !text.includes(' ') && !/^\d+$/.test(text)) {
+                // Ensure the username is valid:
+                // - Not just a number
+                // - No spaces
+                // - Not empty
+                // - Reasonable length
+                // - Not a blacklisted UI word
+                if (text && 
+                    text.length > 0 && 
+                    text.length < 50 && 
+                    !text.includes(' ') && 
+                    !/^\d+$/.test(text) &&
+                    !blacklist.includes(lowerText)) {
                     this.extensionUser = text;
                     console.log(`[USER] Found extension user from profile element: ${this.extensionUser}`);
                     return this.extensionUser;
