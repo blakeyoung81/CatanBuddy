@@ -38,51 +38,69 @@
         }
     };
     
-    // Intercept WebSocket constructor
+    // Intercept WebSocket constructor with Proxy for maximum coverage
     const OriginalWebSocket = window.WebSocket;
     
     window.WebSocket = function(url, protocols) {
-        console.log(`[WEBSOCKET] New WebSocket connection to: ${url}`);
+        console.log(`[WEBSOCKET] 🔌 New WebSocket connection to: ${url}`);
         
         const ws = new OriginalWebSocket(url, protocols);
         
-        // Store original handlers
-        const originalOnMessage = ws.onmessage;
-        const originalAddEventListener = ws.addEventListener;
-        
-        // Override onmessage
-        ws.onmessage = function(event) {
-            try {
-                // Try to decode the message
-                decodeWebSocketMessage(event.data);
-            } catch (error) {
-                console.error("[WEBSOCKET] Error processing message:", error);
-            }
+        // Create a Proxy to intercept ALL property access
+        const wsProxy = new Proxy(ws, {
+            set(target, property, value) {
+                // Intercept onmessage setter
+                if (property === 'onmessage') {
+                    console.log("[WEBSOCKET] 🎯 onmessage setter intercepted!");
+                    const wrappedHandler = function(event) {
+                        console.log("[WEBSOCKET] 📬 onmessage fired!");
+                        try {
+                            decodeWebSocketMessage(event.data);
+                        } catch (error) {
+                            console.error("[WEBSOCKET] ❌ Error in onmessage:", error);
+                        }
+                        // Call original handler
+                        if (value) {
+                            value.call(this, event);
+                        }
+                    };
+                    target[property] = wrappedHandler;
+                    return true;
+                }
+                
+                // Pass through all other properties
+                target[property] = value;
+                return true;
+            },
             
-            // Call original handler
-            if (originalOnMessage) {
-                originalOnMessage.call(this, event);
+            get(target, property) {
+                // Intercept addEventListener
+                if (property === 'addEventListener') {
+                    return function(type, listener, options) {
+                        if (type === 'message') {
+                            console.log("[WEBSOCKET] 🎯 addEventListener('message') intercepted!");
+                            const wrappedListener = function(event) {
+                                console.log("[WEBSOCKET] 📬 message event fired!");
+                                try {
+                                    decodeWebSocketMessage(event.data);
+                                } catch (error) {
+                                    console.error("[WEBSOCKET] ❌ Error in addEventListener:", error);
+                                }
+                                listener.call(this, event);
+                            };
+                            target.addEventListener.call(target, type, wrappedListener, options);
+                        } else {
+                            target.addEventListener.call(target, type, listener, options);
+                        }
+                    };
+                }
+                
+                // Return the property
+                return target[property];
             }
-        };
+        });
         
-        // Override addEventListener to catch all message handlers
-        ws.addEventListener = function(type, listener, options) {
-            if (type === 'message') {
-                const wrappedListener = function(event) {
-                    try {
-                        decodeWebSocketMessage(event.data);
-                    } catch (error) {
-                        console.error("[WEBSOCKET] Error in addEventListener wrapper:", error);
-                    }
-                    listener.call(this, event);
-                };
-                originalAddEventListener.call(this, type, wrappedListener, options);
-            } else {
-                originalAddEventListener.call(this, type, listener, options);
-            }
-        };
-        
-        return ws;
+        return wsProxy;
     };
     
     // Copy static properties
