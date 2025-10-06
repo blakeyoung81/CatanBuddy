@@ -93,22 +93,37 @@
     
     // Function to decode WebSocket messages
     function decodeWebSocketMessage(data) {
+        console.log("[WEBSOCKET] 📨 decodeWebSocketMessage called!");
+        console.log("[WEBSOCKET]   data type:", typeof data);
+        console.log("[WEBSOCKET]   data instanceof ArrayBuffer:", data instanceof ArrayBuffer);
+        console.log("[WEBSOCKET]   data instanceof Blob:", data instanceof Blob);
+        
         // Check if it's binary data (ArrayBuffer or Blob)
         if (data instanceof ArrayBuffer) {
+            console.log("[WEBSOCKET] ⚙️  Processing ArrayBuffer,", data.byteLength, "bytes");
             processBinaryMessage(new Uint8Array(data));
         } else if (data instanceof Blob) {
+            console.log("[WEBSOCKET] ⚙️  Processing Blob,", data.size, "bytes");
             // Convert Blob to ArrayBuffer
             const reader = new FileReader();
             reader.onload = function() {
+                console.log("[WEBSOCKET] ✅ Blob converted to ArrayBuffer");
                 processBinaryMessage(new Uint8Array(reader.result));
+            };
+            reader.onerror = function(err) {
+                console.error("[WEBSOCKET] ❌ Blob read error:", err);
             };
             reader.readAsArrayBuffer(data);
         } else if (typeof data === 'string') {
+            console.log("[WEBSOCKET] 📝 String data:", data.substring(0, 50));
             // Try to parse as hex string
             if (data.match(/^[0-9a-fA-F]+$/)) {
+                console.log("[WEBSOCKET] Parsing as hex string");
                 const uint8Array = hexToUint8Array(data);
                 processBinaryMessage(uint8Array);
             }
+        } else {
+            console.warn("[WEBSOCKET] ⚠️  Unknown data type in decoder");
         }
     }
     
