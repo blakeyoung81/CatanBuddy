@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Colonist Buddy",
-  "version": "1.5.2",
+  "version": "2.0.0",
   "description": "Track dice rolls, resource counts, and game statistics while playing catan on Colonist.io",
   
   "icons": {
@@ -17,8 +17,9 @@
         "*://colonist.io/*",
         "*://*.colonist.io/*"
       ],
-      "js": ["content.js"],
-      "run_at": "document_end"
+      "js": ["msgpack.min.js", "websocket-sniffer.js", "content.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
     }
   ],
 
