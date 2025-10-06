@@ -668,17 +668,28 @@
                 }
             }
             
-            // Emergency fallback - should never reach here
-            ExtensionLogger.error('USER_DETECTION', 'Failed to detect extension user!', {
-                headerElementExists: !!headerUsernameElement,
-                headerElement2Exists: !!headerUsernameElement2,
-                trackedPlayersCount: trackedPlayers.length,
-                trackedPlayers: trackedPlayers,
-                profileElementsCount: profileElements.length,
-                url: window.location.href
-            });
-            this.extensionUser = "UNKNOWN_USER";
+            // Emergency fallback - only log error if we're actually in a game
+            const inGame = window.location.href.includes('colonist.io') && 
+                           (window.location.href.includes('#game') || window.location.href.includes('/game'));
             
+            if (inGame) {
+                // We're in a game but can't detect user - this is a real error
+                ExtensionLogger.error('USER_DETECTION', 'Failed to detect extension user in active game!', {
+                    headerElementExists: !!headerUsernameElement,
+                    headerElement2Exists: !!headerUsernameElement2,
+                    trackedPlayersCount: trackedPlayers.length,
+                    trackedPlayers: trackedPlayers,
+                    profileElementsCount: profileElements.length,
+                    url: window.location.href
+                });
+            } else {
+                // Not in a game yet - this is expected, just debug log
+                ExtensionLogger.debug('USER_DETECTION', 'User not detected yet (not in game)', {
+                    url: window.location.href
+                });
+            }
+            
+            this.extensionUser = "UNKNOWN_USER";
             return this.extensionUser;
         },
         
@@ -825,8 +836,17 @@
         // Initialize and cache the extension user early
         initializeCurrentPlayer: function() {
             console.log(`[USER] Initializing extension user detection...`);
+            
+            // Check if we're actually in a game first
+            const headerElement = document.getElementById('header_profile_username');
+            if (!headerElement) {
+                // Not in a game yet - this is expected and not an error
+                ExtensionLogger.debug('USER_DETECTION', 'Not in a game yet, user detection will happen when game starts');
+                return;
+            }
+            
             const detectedUser = this.getExtensionUser();
-            if (detectedUser) {
+            if (detectedUser && detectedUser !== 'UNKNOWN_USER') {
                 console.log(`[USER] Successfully initialized extension user: ${detectedUser}`);
             } else {
                 console.log(`[USER] Failed to detect extension user during initialization`);
