@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Colonist Buddy",
-  "version": "2.1.5",
-  "description": "Track dice rolls, resource counts, and game statistics while playing catan on Colonist.io",
+  "version": "3.0.0",
+  "description": "Real-time WebSocket-based game tracking for Catan on Colonist.io - tracks dice, resources, and board state",
   
   "icons": {
     "16": "icons/icon16.png",
@@ -17,7 +17,7 @@
         "*://colonist.io/*",
         "*://*.colonist.io/*"
       ],
-      "js": ["msgpack.min.js", "websocket-sniffer.js"],
+      "js": ["msgpack.min.js", "websocket-sniffer.js", "websocket-game-tracker.js"],
       "run_at": "document_start",
       "world": "MAIN",
       "all_frames": true

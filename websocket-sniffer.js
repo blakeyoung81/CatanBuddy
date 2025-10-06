@@ -176,6 +176,12 @@
             // Log decoded structure for debugging
             console.log("[WEBSOCKET] Decoded structure keys:", Object.keys(decoded));
             
+            // Emit custom event for game tracker to listen to
+            const event = new CustomEvent('catanWebSocketMessage', { 
+                detail: decoded 
+            });
+            window.dispatchEvent(event);
+            
             // Check if this is a game initialization message
             if (decoded && decoded.data && decoded.data.payload && decoded.data.payload.gameState) {
                 console.log("[WEBSOCKET] 🎯 GAME INITIALIZATION MESSAGE DETECTED!");
@@ -199,6 +205,12 @@
         console.log("🎮 GAME STATE DECODED FROM WEBSOCKET");
         console.log("═══════════════════════════════════════════════════════");
         console.log("Full Game State:", gameState);
+        
+        // Store player user states for game tracker
+        if (gameState.playerUserStates) {
+            window.catanBoardState.playerUserStates = gameState.playerUserStates;
+            console.log("[WEBSOCKET] 👥 Stored player user states");
+        }
         
         if (!gameState.mapState) {
             console.warn("[WEBSOCKET] No mapState found in game state");
