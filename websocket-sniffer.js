@@ -59,9 +59,9 @@
                         } catch (error) {
                             console.error("[WEBSOCKET] ❌ Error in onmessage:", error);
                         }
-                        // Call original handler
+                        // Call original handler with correct 'this' context
                         if (value) {
-                            value.call(this, event);
+                            value.call(target, event);
                         }
                     };
                     target[property] = wrappedHandler;
@@ -74,6 +74,8 @@
             },
             
             get(target, property) {
+                const value = target[property];
+                
                 // Intercept addEventListener
                 if (property === 'addEventListener') {
                     return function(type, listener, options) {
@@ -95,8 +97,13 @@
                     };
                 }
                 
+                // Bind functions to the target WebSocket to preserve 'this' context
+                if (typeof value === 'function') {
+                    return value.bind(target);
+                }
+                
                 // Return the property
-                return target[property];
+                return value;
             }
         });
         
