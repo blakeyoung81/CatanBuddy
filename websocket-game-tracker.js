@@ -301,8 +301,12 @@
                 break;
                 
             default:
-                // Log unknown message types for debugging
-                console.log(`[WS-TRACKER] Unknown message type: ${messageType}`);
+                // Log unknown message types with full structure for debugging
+                if (messageType !== undefined && messageType !== null) {
+                    console.log(`[WS-TRACKER] ⚠️ Unknown message type: ${messageType}`);
+                    console.log(`[WS-TRACKER]   Full decoded:`, decoded);
+                    console.log(`[WS-TRACKER]   Payload keys:`, payload ? Object.keys(payload) : 'no payload');
+                }
         }
     }
     
