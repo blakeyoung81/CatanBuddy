@@ -122,19 +122,26 @@
     // Process binary MessagePack data
     function processBinaryMessage(uint8Array) {
         try {
-            // Use msgpack-lite for decoding (we'll need to load this library)
-            if (typeof window.msgpack === 'undefined') {
-                // MessagePack library not loaded yet - we'll add it via manifest
-                console.warn("[WEBSOCKET] MessagePack library not loaded");
+            // Use msgpack library for decoding
+            if (typeof msgpack === 'undefined') {
+                console.error("[WEBSOCKET] ❌ MessagePack library not loaded! Cannot decode binary data.");
+                console.log("[WEBSOCKET] Raw data length:", uint8Array.length, "bytes");
                 return;
             }
             
-            const decoded = window.msgpack.decode(uint8Array);
+            console.log("[WEBSOCKET] 🔄 Attempting to decode", uint8Array.length, "bytes...");
+            const decoded = msgpack.decode(uint8Array);
+            console.log("[WEBSOCKET] ✅ Successfully decoded MessagePack data!");
+            
+            // Log decoded structure for debugging
+            console.log("[WEBSOCKET] Decoded structure keys:", Object.keys(decoded));
             
             // Check if this is a game initialization message
             if (decoded && decoded.data && decoded.data.payload && decoded.data.payload.gameState) {
                 console.log("[WEBSOCKET] 🎯 GAME INITIALIZATION MESSAGE DETECTED!");
                 processGameState(decoded.data.payload.gameState);
+            } else if (decoded && decoded.data) {
+                console.log("[WEBSOCKET] Message type:", decoded.data.type, "Keys:", Object.keys(decoded.data));
             }
             
         } catch (error) {
@@ -393,16 +400,18 @@
             position: fixed;
             top: 420px;
             left: 10px;
-            background: rgba(0, 0, 0, 0.9);
-            border: 2px solid #8B4513;
+            background: rgba(0, 0, 0, 0.95);
+            border: 2px solid #666;
             border-radius: 8px;
-            padding: 10px;
+            padding: 12px;
             color: white;
             font-family: Arial, sans-serif;
             z-index: 10000;
-            max-width: 400px;
-            max-height: 400px;
+            max-width: 450px;
+            max-height: 500px;
             overflow-y: auto;
+            resize: both;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.5);
         `;
         
         // Header
