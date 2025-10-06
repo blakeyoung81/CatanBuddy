@@ -148,7 +148,10 @@
     
     // Process the game state and extract board layout
     function processGameState(gameState) {
-        console.log("[WEBSOCKET] Processing game state...", gameState);
+        console.log("═══════════════════════════════════════════════════════");
+        console.log("🎮 GAME STATE DECODED FROM WEBSOCKET");
+        console.log("═══════════════════════════════════════════════════════");
+        console.log("Full Game State:", gameState);
         
         if (!gameState.mapState) {
             console.warn("[WEBSOCKET] No mapState found in game state");
@@ -156,6 +159,7 @@
         }
         
         const mapState = gameState.mapState;
+        console.log("\n📊 MAP STATE:", mapState);
         
         // Extract tile hex states (the board!)
         if (mapState.tileHexStates) {
@@ -202,6 +206,9 @@
     
     // Extract tile data (hexes with resources and numbers)
     function extractTileData(tileHexStates) {
+        console.log("\n🎲 EXTRACTING TILE DATA:");
+        console.log("─────────────────────────────────────────────");
+        
         for (const [tileId, tileData] of Object.entries(tileHexStates)) {
             const tile = {
                 id: tileId,
@@ -215,8 +222,24 @@
             
             window.catanBoardState.tiles[tileId] = tile;
             
-            console.log(`[TILE ${tileId}] (${tile.x}, ${tile.y}) = ${tile.resource} (${tile.diceNumber})`);
+            // Enhanced logging with emojis
+            const resourceEmojis = {
+                'desert': '🏜️',
+                'brick': '🧱',
+                'wool': '🐑',
+                'ore': '⛰️',
+                'grain': '🌾',
+                'lumber': '🌲'
+            };
+            
+            const emoji = resourceEmojis[tile.resource] || '❓';
+            const prob = tile.diceNumber ? calculateDiceProbability(tile.diceNumber) : 0;
+            
+            console.log(`${emoji} Tile ${tileId.padStart(2)}: (${tile.x}, ${tile.y}) = ${tile.resource.toUpperCase().padEnd(7)} | Dice: ${tile.diceNumber || 'N/A'} | Prob: ${prob.toFixed(1)}%`);
         }
+        
+        console.log("─────────────────────────────────────────────");
+        console.log(`✅ Loaded ${Object.keys(window.catanBoardState.tiles).length} tiles\n`);
     }
     
     // Extract corner data (vertices for settlements/cities)
@@ -281,18 +304,85 @@
         console.log(`[WEBSOCKET] Player colors:`, window.catanBoardState.playerColors);
     }
     
-    // Update board display (create or update the board table)
-    function updateBoardDisplay() {
-        console.log("[WEBSOCKET] Updating board display...");
+    // Calculate dice roll probability
+    function calculateDiceProbability(diceNumber) {
+        const probabilities = {
+            2: 2.78, 3: 5.56, 4: 8.33, 5: 11.11, 6: 13.89,
+            7: 16.67, 8: 13.89, 9: 11.11, 10: 8.33, 11: 5.56, 12: 2.78
+        };
+        return probabilities[diceNumber] || 0;
+    }
+    
+    // Calculate strategic statistics from board data
+    function calculateStrategicStats() {
+        const stats = {
+            resourceDistribution: { brick: 0, wool: 0, ore: 0, grain: 0, lumber: 0, desert: 0 },
+            highProbabilityTiles: [],
+            scarcestResources: [],
+            mostAbundantResources: [],
+            totalPips: 0,
+            averagePipsPerResource: {}
+        };
         
-        // Remove existing board table if it exists
-        const existingTable = document.getElementById('board-layout-container');
-        if (existingTable) {
-            existingTable.remove();
+        // Count resources and calculate pips
+        for (const tile of Object.values(window.catanBoardState.tiles)) {
+            stats.resourceDistribution[tile.resource]++;
+            
+            if (tile.diceNumber) {
+                const pips = Math.abs(tile.diceNumber - 7); // Pips are dots on the number token
+                stats.totalPips += pips;
+                
+                if (tile.resource !== 'desert') {
+                    if (!stats.averagePipsPerResource[tile.resource]) {
+                        stats.averagePipsPerResource[tile.resource] = { total: 0, count: 0 };
+                    }
+                    stats.averagePipsPerResource[tile.resource].total += pips;
+                    stats.averagePipsPerResource[tile.resource].count++;
+                }
+                
+                // Track high-probability tiles (6, 8)
+                if (tile.diceNumber === 6 || tile.diceNumber === 8) {
+                    stats.highProbabilityTiles.push({
+                        ...tile,
+                        probability: calculateDiceProbability(tile.diceNumber)
+                    });
+                }
+            }
         }
         
-        // Create board layout table
+        // Calculate average pips per resource
+        for (const [resource, data] of Object.entries(stats.averagePipsPerResource)) {
+            data.average = data.total / data.count;
+        }
+        
+        // Find scarcest and most abundant
+        const resourceCounts = Object.entries(stats.resourceDistribution)
+            .filter(([res]) => res !== 'desert')
+            .sort((a, b) => a[1] - b[1]);
+        
+        stats.scarcestResources = resourceCounts.slice(0, 2);
+        stats.mostAbundantResources = resourceCounts.slice(-2);
+        
+        return stats;
+    }
+    
+    // Update board display (create or update the board table)
+    function updateBoardDisplay() {
+        console.log("\n📊 CALCULATING STRATEGIC STATISTICS...");
+        const stats = calculateStrategicStats();
+        console.log("Strategic Stats:", stats);
+        console.log("═══════════════════════════════════════════════════════\n");
+        
+        // Remove existing tables if they exist
+        const existingBoardTable = document.getElementById('board-layout-container');
+        if (existingBoardTable) existingBoardTable.remove();
+        
+        const existingStatsTable = document.getElementById('strategic-stats-container');
+        if (existingStatsTable) existingStatsTable.remove();
+        
+        // Create tables
         createBoardLayoutTable();
+        createStrategicStatsTable(stats);
     }
     
     // Create the board layout display table
@@ -445,6 +535,179 @@
         
         document.body.appendChild(container);
         console.log("[WEBSOCKET] ✅ Board layout table created!");
+    }
+    
+    // Create strategic statistics table
+    function createStrategicStatsTable(stats) {
+        const container = document.createElement('div');
+        container.id = 'strategic-stats-container';
+        container.style.cssText = `
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            background: rgba(0, 0, 0, 0.95);
+            border: 2px solid #FFD700;
+            border-radius: 8px;
+            padding: 12px;
+            color: white;
+            font-family: Arial, sans-serif;
+            z-index: 10001;
+            max-width: 350px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        `;
+        
+        // Header
+        const header = document.createElement('div');
+        header.style.cssText = `
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+            padding-bottom: 8px;
+            border-bottom: 2px solid #FFD700;
+        `;
+        
+        const title = document.createElement('h3');
+        title.textContent = '📊 Strategic Analysis';
+        title.style.cssText = 'margin: 0; font-size: 15px; color: #FFD700;';
+        header.appendChild(title);
+        
+        container.appendChild(header);
+        
+        // Resource Distribution Section
+        const resourceSection = document.createElement('div');
+        resourceSection.style.cssText = 'margin-bottom: 12px;';
+        
+        const resourceTitle = document.createElement('h4');
+        resourceTitle.textContent = '📦 Resource Distribution';
+        resourceTitle.style.cssText = 'margin: 0 0 6px 0; font-size: 12px; color: #90EE90;';
+        resourceSection.appendChild(resourceTitle);
+        
+        for (const [resource, count] of Object.entries(stats.resourceDistribution)) {
+            if (resource === 'desert') continue;
+            
+            const resourceEmojis = {
+                'brick': '🧱',
+                'wool': '🐑',
+                'ore': '⛰️',
+                'grain': '🌾',
+                'lumber': '🌲'
+            };
+            
+            const row = document.createElement('div');
+            row.style.cssText = 'display: flex; justify-content: space-between; padding: 3px 0; font-size: 11px;';
+            
+            const avgPips = stats.averagePipsPerResource[resource]?.average || 0;
+            const quality = avgPips >= 4 ? '🔥 HOT' : avgPips >= 3 ? '⚠️ MED' : '❄️ COLD';
+            
+            row.innerHTML = `
+                <span>${resourceEmojis[resource]} ${resource.charAt(0).toUpperCase() + resource.slice(1)}</span>
+                <span><strong>${count}</strong> tiles | ${avgPips.toFixed(1)} avg pips ${quality}</span>
+            `;
+            resourceSection.appendChild(row);
+        }
+        
+        container.appendChild(resourceSection);
+        
+        // High Value Spots Section
+        const valueSection = document.createElement('div');
+        valueSection.style.cssText = 'margin-bottom: 12px;';
+        
+        const valueTitle = document.createElement('h4');
+        valueTitle.textContent = '⭐ High-Value Tiles (6 & 8)';
+        valueTitle.style.cssText = 'margin: 0 0 6px 0; font-size: 12px; color: #FFD700;';
+        valueSection.appendChild(valueTitle);
+        
+        stats.highProbabilityTiles.forEach(tile => {
+            const resourceEmojis = {
+                'brick': '🧱',
+                'wool': '🐑',
+                'ore': '⛰️',
+                'grain': '🌾',
+                'lumber': '🌲'
+            };
+            
+            const row = document.createElement('div');
+            row.style.cssText = 'padding: 3px 0; font-size: 11px; color: #FFD700;';
+            row.innerHTML = `
+                ${resourceEmojis[tile.resource]} <strong>Tile ${tile.id}</strong>: ${tile.resource.toUpperCase()} on ${tile.diceNumber} (${tile.probability.toFixed(1)}% prob)
+            `;
+            valueSection.appendChild(row);
+        });
+        
+        container.appendChild(valueSection);
+        
+        // Strategic Insights Section
+        const insightsSection = document.createElement('div');
+        insightsSection.style.cssText = 'margin-bottom: 12px; padding: 8px; background: rgba(255,215,0,0.1); border-radius: 4px;';
+        
+        const insightsTitle = document.createElement('h4');
+        insightsTitle.textContent = '💡 Strategic Insights';
+        insightsTitle.style.cssText = 'margin: 0 0 6px 0; font-size: 12px; color: #FF6B6B;';
+        insightsSection.appendChild(insightsTitle);
+        
+        // Scarcest resource insight
+        if (stats.scarcestResources.length > 0) {
+            const scarcest = stats.scarcestResources[0];
+            const insight1 = document.createElement('div');
+            insight1.style.cssText = 'font-size: 10px; margin: 4px 0; line-height: 1.4;';
+            insight1.innerHTML = `
+                🎯 <strong>Scarcest:</strong> ${scarcest[0].toUpperCase()} (only ${scarcest[1]} tiles)<br>
+                → <em>High trade value! Control these spots early.</em>
+            `;
+            insightsSection.appendChild(insight1);
+        }
+        
+        // Most abundant insight
+        if (stats.mostAbundantResources.length > 0) {
+            const abundant = stats.mostAbundantResources[stats.mostAbundantResources.length - 1];
+            const insight2 = document.createElement('div');
+            insight2.style.cssText = 'font-size: 10px; margin: 4px 0; line-height: 1.4;';
+            insight2.innerHTML = `
+                📊 <strong>Most Common:</strong> ${abundant[0].toUpperCase()} (${abundant[1]} tiles)<br>
+                → <em>Lower trade value, but easier to obtain.</em>
+            `;
+            insightsSection.appendChild(insight2);
+        }
+        
+        // Port strategy
+        const portCount = Object.keys(window.catanBoardState.ports).length;
+        const insight3 = document.createElement('div');
+        insight3.style.cssText = 'font-size: 10px; margin: 4px 0; line-height: 1.4;';
+        insight3.innerHTML = `
+            ⚓ <strong>${portCount} Ports Available</strong><br>
+            → <em>Settle near 2:1 ports for scarce resources!</em>
+        `;
+        insightsSection.appendChild(insight3);
+        
+        container.appendChild(insightsSection);
+        
+        // Pro Tips Section
+        const tipsSection = document.createElement('div');
+        tipsSection.style.cssText = 'padding: 6px; background: rgba(144,238,144,0.1); border-radius: 4px; border-left: 3px solid #90EE90;';
+        
+        const tipsTitle = document.createElement('div');
+        tipsTitle.style.cssText = 'font-size: 11px; font-weight: bold; margin-bottom: 4px; color: #90EE90;';
+        tipsTitle.textContent = '🎓 Pro Tips:';
+        tipsSection.appendChild(tipsTitle);
+        
+        const tip = document.createElement('div');
+        tip.style.cssText = 'font-size: 10px; line-height: 1.4;';
+        tip.innerHTML = `
+            • Prioritize corners touching multiple 6s and 8s<br>
+            • Settle on ports for scarce resources<br>
+            • Diversify resources early, specialize late<br>
+            • Block opponents from high-pip clusters
+        `;
+        tipsSection.appendChild(tip);
+        
+        container.appendChild(tipsSection);
+        
+        // Make draggable
+        makeDraggable(container, 'strategicStatsPosition');
+        
+        document.body.appendChild(container);
+        console.log("[WEBSOCKET] ✅ Strategic stats table created!");
     }
     
     // Make element draggable
