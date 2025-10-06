@@ -647,16 +647,21 @@
             }
             
             // PRIORITY 4: Look for username in any profile-related elements (broad search)
+            // BUT exclude common UI elements that aren't usernames
             const profileElements = document.querySelectorAll('[class*="username"], [class*="profile"], [id*="username"], [id*="profile"]');
+            const invalidUsernames = ['notifications', 'settings', 'profile', 'logout', 'login', 'menu', 'home', 'nav', 'header'];
+            
             for (const element of profileElements) {
                 const text = element.textContent.trim();
                 // Must be a valid username (no spaces, reasonable length, not a number)
+                // AND not a common UI element name
                 if (text && 
                     text.length > 1 && 
                     text.length < 50 && 
                     !text.includes(' ') && 
                     isNaN(text) && 
-                    !text.match(/^\d+$/)) {
+                    !text.match(/^\d+$/) &&
+                    !invalidUsernames.includes(text.toLowerCase())) {
                     this.extensionUser = text;
                     console.log(`[USER] Found extension user from profile element: ${this.extensionUser}`);
                     return this.extensionUser;
@@ -842,6 +847,14 @@
             if (action.type === 'dice_roll' && this.gamePhase === 'initial') {
                 console.log("First dice roll detected - switching to main game phase");
                 this.gamePhase = 'main';
+                
+                // Force re-detection of extension user at game start
+                this.extensionUser = null;
+                const detectedUser = this.getExtensionUser();
+                ExtensionLogger.success('GAME_START', 'Main game phase started, user detected', {
+                    user: detectedUser,
+                    players: Object.keys(this.players)
+                });
             }
             
             this.updatePossibleStates(action);
@@ -2881,6 +2894,23 @@
                                 
                                 // Get the extension user name (who "You" refers to)
                                 const extensionUser = window.gameState.getExtensionUser();
+                                ExtensionLogger.info('STEAL', `Extension user detection for "You"`, {
+                                    detectedUser: extensionUser,
+                                    victim: victim,
+                                    stolenResource: stolenResource,
+                                    cachedUser: window.gameState.extensionUser,
+                                    allPlayers: Object.keys(window.gameState.players)
+                                });
+                                
+                                // Critical check: If extensionUser is invalid, abort!
+                                if (!extensionUser || extensionUser === 'UNKNOWN_USER' || extensionUser === 'Notifications') {
+                                    ExtensionLogger.error('STEAL', 'Invalid extension user detected! Cannot process steal.', {
+                                        invalidUser: extensionUser,
+                                        allPlayers: Object.keys(window.gameState.players)
+                                    });
+                                    return false;
+                                }
+                                
                                 console.log(`[STEAL] Extension user (You) is: ${extensionUser}`);
                                 console.log(`[STEAL] Processing direct steal: ${extensionUser} +1 ${stolenResource}, ${victim} -1 ${stolenResource}`);
                                 
