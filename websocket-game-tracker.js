@@ -71,6 +71,45 @@
                 year_of_plenty: 0,
                 monopoly: 0
             };
+            this.detectExtensionUser();
+        },
+        
+        // Detect which player is using the extension
+        detectExtensionUser: function() {
+            // Try multiple methods to find the current user
+            
+            // Method 1: Check header username
+            const headerUsername = document.querySelector('#header_profile_username');
+            if (headerUsername && headerUsername.textContent) {
+                const username = headerUsername.textContent.trim();
+                if (username && username.length > 0 && !username.match(/^\d+$/)) {
+                    this.extensionUser = username;
+                    console.log(`[WS-TRACKER] 👤 Extension user detected: ${username}`);
+                    return username;
+                }
+            }
+            
+            // Method 2: Check profile area
+            const profileName = document.querySelector('[class*="profile"] [class*="username"]');
+            if (profileName && profileName.textContent) {
+                const username = profileName.textContent.trim();
+                if (username && username.length > 0) {
+                    this.extensionUser = username;
+                    console.log(`[WS-TRACKER] 👤 Extension user detected (profile): ${username}`);
+                    return username;
+                }
+            }
+            
+            // Method 3: Check meta tags or data attributes
+            const metaUser = document.querySelector('meta[name="user"]');
+            if (metaUser && metaUser.content) {
+                this.extensionUser = metaUser.content;
+                console.log(`[WS-TRACKER] 👤 Extension user detected (meta): ${metaUser.content}`);
+                return metaUser.content;
+            }
+            
+            console.log("[WS-TRACKER] ⚠️ Could not auto-detect extension user");
+            return null;
         },
         
         // Add player
@@ -490,29 +529,155 @@
         // Log the action structure for mapping
         console.log("[WS-TRACKER] 🎬 Game action payload:", payload);
         
-        if (payload.action) {
-            console.log(`[WS-TRACKER]   Action type: ${payload.action.type}`);
-            console.log(`[WS-TRACKER]   Action keys:`, Object.keys(payload.action));
-            
-            // Log specific action data
-            if (payload.action.playerColor !== undefined) {
-                const playerName = findPlayerNameByColorIndex(payload.action.playerColor);
-                console.log(`[WS-TRACKER]   Player: ${playerName} (color ${payload.action.playerColor})`);
-            }
-            
-            if (payload.action.type) {
-                console.log(`[WS-TRACKER]   Full action data:`, payload.action);
-            }
+        if (!payload || !payload.action) {
+            console.log("[WS-TRACKER] ⚠️ Invalid action payload");
+            return;
         }
         
-        // TODO: Map action types to handlers:
-        // - Dice roll actions
-        // - Resource gain actions  
-        // - Build actions (settlement, city, road)
-        // - Trade actions (player trade, bank trade, maritime trade)
-        // - Development card actions (buy, play)
-        // - Robber/steal actions
-        // - Discard actions
+        const action = payload.action;
+        const actionType = action.type;
+        const playerColor = action.playerColor;
+        const playerName = findPlayerNameByColorIndex(playerColor);
+        
+        console.log(`[WS-TRACKER]   Action: ${actionType} by ${playerName || 'Unknown'} (color ${playerColor})`);
+        console.log(`[WS-TRACKER]   Action keys:`, Object.keys(action));
+        console.log(`[WS-TRACKER]   Full action:`, action);
+        
+        // Handle different action types
+        // These are educated guesses based on typical Catan game protocol
+        // Will be refined based on actual message observations
+        
+        switch(actionType) {
+            // Dice Roll Actions
+            case 'ROLL_DICE':
+            case 'DICE_ROLLED':
+            case 'RollDice':
+                if (action.dice1 !== undefined && action.dice2 !== undefined) {
+                    const roll = action.dice1 + action.dice2;
+                    window.gameState.incrementDiceCount(roll, playerName);
+                    console.log(`[WS-TRACKER] 🎲 ${playerName} rolled ${action.dice1} + ${action.dice2} = ${roll}`);
+                }
+                break;
+            
+            // Build Actions
+            case 'BUILD_SETTLEMENT':
+            case 'PLACE_SETTLEMENT':
+            case 'BuildSettlement':
+                if (playerName) {
+                    window.gameState.players[playerName].settlements++;
+                    console.log(`[WS-TRACKER] 🏘️ ${playerName} built a settlement`);
+                }
+                break;
+                
+            case 'BUILD_CITY':
+            case 'PLACE_CITY':
+            case 'BuildCity':
+                if (playerName) {
+                    window.gameState.players[playerName].cities++;
+                    window.gameState.players[playerName].settlements--;
+                    console.log(`[WS-TRACKER] 🏰 ${playerName} built a city`);
+                }
+                break;
+                
+            case 'BUILD_ROAD':
+            case 'PLACE_ROAD':
+            case 'BuildRoad':
+                if (playerName) {
+                    window.gameState.players[playerName].roads++;
+                    console.log(`[WS-TRACKER] 🛣️ ${playerName} built a road`);
+                }
+                break;
+            
+            // Development Card Actions
+            case 'BUY_CARD':
+            case 'BUY_DEVELOPMENT_CARD':
+            case 'BuyDevelopmentCard':
+                if (playerName) {
+                    window.gameState.players[playerName].devCards++;
+                    window.gameState.devCardsPurchased++;
+                    console.log(`[WS-TRACKER] 🎴 ${playerName} bought a development card`);
+                }
+                break;
+                
+            case 'PLAY_KNIGHT':
+            case 'PlayKnight':
+                window.gameState.devCardsPlayed.knight++;
+                console.log(`[WS-TRACKER] ⚔️ ${playerName} played a Knight card`);
+                break;
+                
+            case 'PLAY_ROAD_BUILDING':
+            case 'PlayRoadBuilding':
+                window.gameState.devCardsPlayed.road_building++;
+                console.log(`[WS-TRACKER] 🛤️ ${playerName} played Road Building`);
+                break;
+                
+            case 'PLAY_YEAR_OF_PLENTY':
+            case 'PlayYearOfPlenty':
+                window.gameState.devCardsPlayed.year_of_plenty++;
+                console.log(`[WS-TRACKER] 🎁 ${playerName} played Year of Plenty`);
+                break;
+                
+            case 'PLAY_MONOPOLY':
+            case 'PlayMonopoly':
+                window.gameState.devCardsPlayed.monopoly++;
+                console.log(`[WS-TRACKER] 💰 ${playerName} played Monopoly`);
+                break;
+            
+            // Trade Actions
+            case 'TRADE_ACCEPT':
+            case 'TRADE_OFFER':
+            case 'TRADE_BANK':
+            case 'MARITIME_TRADE':
+                console.log(`[WS-TRACKER] 🔄 Trade action: ${actionType}`);
+                if (action.give && action.get) {
+                    console.log(`[WS-TRACKER]   Give:`, action.give);
+                    console.log(`[WS-TRACKER]   Get:`, action.get);
+                }
+                break;
+            
+            // Robber Actions
+            case 'MOVE_ROBBER':
+            case 'MoveRobber':
+                console.log(`[WS-TRACKER] 🦹 ${playerName} moved the robber`);
+                if (action.hexIndex !== undefined) {
+                    console.log(`[WS-TRACKER]   To hex: ${action.hexIndex}`);
+                }
+                break;
+                
+            case 'STEAL':
+            case 'STEAL_CARD':
+            case 'StealCard':
+                console.log(`[WS-TRACKER] 🃏 ${playerName} stole from another player`);
+                if (action.targetPlayer !== undefined) {
+                    const targetName = findPlayerNameByColorIndex(action.targetPlayer);
+                    console.log(`[WS-TRACKER]   Target: ${targetName}`);
+                }
+                break;
+            
+            // Discard Actions
+            case 'DISCARD':
+            case 'DISCARD_CARDS':
+            case 'DiscardCards':
+                console.log(`[WS-TRACKER] 🗑️ ${playerName} discarded cards`);
+                if (action.cards) {
+                    console.log(`[WS-TRACKER]   Cards:`, action.cards);
+                }
+                break;
+            
+            // Turn/Phase Actions  
+            case 'END_TURN':
+            case 'EndTurn':
+                console.log(`[WS-TRACKER] ⏭️ ${playerName} ended their turn`);
+                break;
+                
+            default:
+                console.log(`[WS-TRACKER] ⚠️ Unknown action type: ${actionType}`);
+                console.log(`[WS-TRACKER]   Full action data:`, action);
+        }
+        
+        // Update UI after action
+        window.gameState.updateResourceDisplay();
+        window.gameState.updateTurnOrderTable();
     }
     
     // Find player name by color index
