@@ -339,9 +339,19 @@
                 }
                 break;
             
-            case 28: // Unknown - needs mapping
+            case 28: // Likely game actions (array of actions)
                 console.log(`[WS-TRACKER] 🔍 Type 28 payload:`, payload);
-                if (payload && payload.action) {
+                
+                // Type 28 appears to be an array of actions
+                if (Array.isArray(payload)) {
+                    console.log(`[WS-TRACKER] 📋 Type 28 is an ARRAY with ${payload.length} items`);
+                    payload.forEach((item, index) => {
+                        console.log(`[WS-TRACKER]   Item ${index}:`, item);
+                        if (item && typeof item === 'object') {
+                            console.log(`[WS-TRACKER]   Item ${index} keys:`, Object.keys(item));
+                        }
+                    });
+                } else if (payload && payload.action) {
                     console.log(`[WS-TRACKER]   Action type:`, payload.action.type);
                     console.log(`[WS-TRACKER]   Action data:`, payload.action);
                 }
@@ -351,8 +361,21 @@
                 console.log(`[WS-TRACKER] 🔍 Type 80 payload:`, payload);
                 break;
             
-            case 91: // Unknown - needs mapping
-                console.log(`[WS-TRACKER] 🔍 Type 91 payload:`, payload);
+            case 43: // Trade action!
+                console.log(`[WS-TRACKER] 🔄 Type 43 - TRADE detected!`);
+                if (payload) {
+                    console.log(`[WS-TRACKER]   Giving Player: ${payload.givingPlayer}`);
+                    console.log(`[WS-TRACKER]   Giving Cards:`, payload.givingCards);
+                    console.log(`[WS-TRACKER]   Receiving Player: ${payload.receivingPlayer}`);
+                    console.log(`[WS-TRACKER]   Receiving Cards:`, payload.receivingCards);
+                }
+                break;
+            
+            case 91: // Turn timer / state transitions
+                console.log(`[WS-TRACKER] ⏱️ Type 91 - State transition`);
+                if (payload && payload.timeLeftInState !== undefined) {
+                    console.log(`[WS-TRACKER]   Time left: ${payload.timeLeftInState}s`);
+                }
                 break;
                 
             default:
