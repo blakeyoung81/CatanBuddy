@@ -27,7 +27,7 @@
         "*://colonist.io/*",
         "*://*.colonist.io/*"
       ],
-      "js": ["content.js"],
+      "js": ["content-ui.js"],
       "run_at": "document_end",
       "world": "MAIN"
     }
