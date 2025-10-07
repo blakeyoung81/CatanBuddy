@@ -288,16 +288,32 @@
         
         // Handle different message types
         switch (messageType) {
-            case 4: // Game state update
+            case 4: // Game state update (full sync)
                 if (payload && payload.gameState) {
                     handleGameStateUpdate(payload.gameState);
                 }
                 break;
                 
-            case 5: // Game action
+            case 5: // Game action (individual action)
                 if (payload) {
                     handleGameAction(payload);
                 }
+                break;
+            
+            case 28: // Unknown - needs mapping
+                console.log(`[WS-TRACKER] 🔍 Type 28 payload:`, payload);
+                if (payload && payload.action) {
+                    console.log(`[WS-TRACKER]   Action type:`, payload.action.type);
+                    console.log(`[WS-TRACKER]   Action data:`, payload.action);
+                }
+                break;
+            
+            case 80: // Unknown - needs mapping
+                console.log(`[WS-TRACKER] 🔍 Type 80 payload:`, payload);
+                break;
+            
+            case 91: // Unknown - needs mapping
+                console.log(`[WS-TRACKER] 🔍 Type 91 payload:`, payload);
                 break;
                 
             default:
@@ -306,6 +322,13 @@
                     console.log(`[WS-TRACKER] ⚠️ Unknown message type: ${messageType}`);
                     console.log(`[WS-TRACKER]   Full decoded:`, decoded);
                     console.log(`[WS-TRACKER]   Payload keys:`, payload ? Object.keys(payload) : 'no payload');
+                    
+                    // Check for common structures
+                    if (payload) {
+                        if (payload.action) console.log(`[WS-TRACKER]   Has action:`, payload.action.type);
+                        if (payload.gameState) console.log(`[WS-TRACKER]   Has gameState`);
+                        if (payload.diceState) console.log(`[WS-TRACKER]   Has diceState`);
+                    }
                 }
         }
     }
@@ -464,9 +487,32 @@
     
     // Handle individual game actions
     function handleGameAction(payload) {
-        // This would handle individual actions like trades, builds, etc.
-        // For now, we rely on full state updates
-        console.log("[WS-TRACKER] Game action:", payload);
+        // Log the action structure for mapping
+        console.log("[WS-TRACKER] 🎬 Game action payload:", payload);
+        
+        if (payload.action) {
+            console.log(`[WS-TRACKER]   Action type: ${payload.action.type}`);
+            console.log(`[WS-TRACKER]   Action keys:`, Object.keys(payload.action));
+            
+            // Log specific action data
+            if (payload.action.playerColor !== undefined) {
+                const playerName = findPlayerNameByColorIndex(payload.action.playerColor);
+                console.log(`[WS-TRACKER]   Player: ${playerName} (color ${payload.action.playerColor})`);
+            }
+            
+            if (payload.action.type) {
+                console.log(`[WS-TRACKER]   Full action data:`, payload.action);
+            }
+        }
+        
+        // TODO: Map action types to handlers:
+        // - Dice roll actions
+        // - Resource gain actions  
+        // - Build actions (settlement, city, road)
+        // - Trade actions (player trade, bank trade, maritime trade)
+        // - Development card actions (buy, play)
+        // - Robber/steal actions
+        // - Discard actions
     }
     
     // Find player name by color index
